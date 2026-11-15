@@ -1,18 +1,19 @@
 ---
-description: Preserve explicit architecture, API contracts, and dependency boundaries.
+description: Make architecture visible in directory structure and APIs; enforce boundaries mechanically.
 ---
 
 # Architecture and boundaries
 
-- Understand the intended architecture before adding or moving code.
+Repository structure is itself an agent-control mechanism. Directory layout, module ownership, and dependency direction communicate context and constrain what is easy to do.
+
+- Understand the intended architecture and ownership model before adding or moving code.
 - Prefer APIs that make valid behavior easy and invalid behavior difficult or impossible.
 - Encode architectural decisions in module structure, types, APIs, and dependency constraints—not only in prose.
-- Respect process, thread, runtime, platform, and layer boundaries. Do not import implementation details across a boundary simply because it is convenient.
-- Keep dependencies flowing in the direction established by the repository.
-- Use the repository's dependency graph tooling, boundary tests, or lint rules when available.
-- Avoid subtle APIs and patterns that require extensive caveats to use correctly. Prefer a simpler supported abstraction.
-- If a low-level mechanism is unsafe or routinely misused, route callers through a well-designed wrapper/API and restrict direct use where feasible.
-- Do not introduce cross-layer coupling, hidden side effects, or circular dependencies.
-- Before changing an API, identify callers and assess compatibility, migration, and error-handling implications.
+- Organize code so that process, thread, runtime, platform, and layer boundaries are obvious from location. Agents (and humans) should be able to infer ownership and allowed dependencies from the path.
+- Keep dependencies flowing in the direction established by the repository. Use dependency-graph tooling, boundary tests, or lint rules when available; prefer making forbidden imports mechanically detectable or impossible.
+- A recurring boundary violation should usually become a static dependency or architecture check rather than another reminder in documentation.
+- Avoid introducing cross-layer coupling, hidden side effects, or circular dependencies.
+- Before changing a public or shared API, identify callers and assess compatibility, migration, and error-handling implications.
+- If a low-level mechanism is routinely misused, prefer a well-designed wrapper or restricted API surface over relying on comments that warn people not to misuse it.
 
-A recurring boundary violation should usually become a static dependency/lint check rather than a reminder in documentation.
+The goal is not merely “respect boundaries.” The goal is an environment in which the architecture is both visible and enforced, so that high-volume agent contribution does not erode it.
