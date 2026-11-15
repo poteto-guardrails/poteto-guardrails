@@ -1,107 +1,83 @@
-"""Stop: run the full check before Claude may finish a turn that changed the working tree.
+"""Stop: Claude may not finish a turn that changed the working tree until the full check
+has passed on exactly that tree.
 
-- Skips when nothing changed since the last passing run (Q&A turns cost nothing).
-- Sends Claude back up to STOP_GATE_MAX_RETRIES times, then lets it stop and
-  tells the user, so a stubborn failure can't loop forever.
+Decision order:
+  1. Tree matches this session's baseline         -> nothing changed, allow.
+  2. A valid record exists for (tree, command)     -> already verified (usually by check.py), allow.
+  3. Otherwise run the full check now and record the result.
+     - pass                                        -> allow.
+     - fail, retries left in this stop chain       -> block (exit 2), output goes to Claude.
+     - fail, retries used up                       -> allow, but warn the user: NOT verified.
+
+Retries are per session and per stop chain: stop_hook_active=false starts a new chain.
+Never fails closed: a broken stop gate must not trap the session. Failures are made
+visible to the user instead.
 """
-import hashlib
 import json
 import os
-import subprocess
 import sys
-import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import _guardrails as g  # noqa: E402
 
 
-def tree_fingerprint():
-    """Hash of tracked changes plus untracked files; None if not a git repo."""
-    try:
-        diff = subprocess.run(["git", "diff", "HEAD", "--binary"], cwd=g.project_dir(),
-                              capture_output=True, timeout=60)
-        status = subprocess.run(["git", "status", "--porcelain", "--untracked-files=all"],
-                                cwd=g.project_dir(), capture_output=True, timeout=60)
-    except (OSError, subprocess.TimeoutExpired):
-        return None
-    if status.returncode != 0:
-        return None
-    if not status.stdout.strip():
-        return "clean"
-    digest = hashlib.sha256(diff.stdout + status.stdout)
-    for line in status.stdout.decode(errors="replace").splitlines():
-        if line.startswith("??"):
-            path = os.path.join(g.project_dir(), line[3:].strip().strip('"'))
-            try:
-                with open(path, "rb") as fh:
-                    digest.update(fh.read())
-            except OSError:
-                pass
-    return digest.hexdigest()
-
-
-def state_path():
-    key = hashlib.sha256(g.project_dir().encode()).hexdigest()[:16]
-    folder = os.path.join(tempfile.gettempdir(), "claude-guardrails")
-    os.makedirs(folder, exist_ok=True)
-    return os.path.join(folder, key + ".json")
-
-
-def load_state():
-    try:
-        with open(state_path(), encoding="utf-8") as fh:
-            return json.load(fh)
-    except (OSError, ValueError):
-        return {}
-
-
-def save_state(state):
-    with open(state_path(), "w", encoding="utf-8") as fh:
-        json.dump(state, fh)
+def warn_user(message):
+    print(json.dumps({"systemMessage": message}))
+    sys.exit(0)
 
 
 def main():
-    event = g.read_event()
-    if "--reset" in sys.argv:  # UserPromptSubmit: each new request gets fresh retries
-        state = load_state()
-        save_state({"last_pass": state.get("last_pass")})
-        sys.exit(0)
+    event = g.read_event_lenient()
+    session = event.get("session_id") or "unknown"
     cfg = g.load_config()
     cmd = cfg.get("FULL_CHECK_CMD", "")
+    state = g.load_session(session)
+    fp = g.fingerprint()
+    changed = fp is None or fp != state.get("baseline")
+
     if not cmd:
+        if changed and fp is not None:
+            warn_user("Guardrails: files changed but FULL_CHECK_CMD isn't configured. This work is unverified.")
+        sys.exit(0)
+    if not changed:
+        sys.exit(0)
+    if g.record_is_valid(g.find_record(fp, cmd), fp, cmd):
         sys.exit(0)
 
-    fingerprint = tree_fingerprint()
-    state = load_state()
-    if fingerprint == "clean" or (fingerprint and fingerprint == state.get("last_pass")):
-        sys.exit(0)
-
-    timeout = int(cfg.get("FULL_CHECK_TIMEOUT") or 840)
-    code, output = g.run(cmd, timeout)
-    session = event.get("session_id", "")
+    timeout = g.int_setting(cfg, "FULL_CHECK_TIMEOUT", 840)
+    code, output, seconds = g.run(cmd, timeout)
+    fp_after = g.fingerprint()
+    if fp is not None and fp_after == fp:
+        g.write_record(fp, cmd, code, seconds, "stop_gate", session)
     if code == 0:
-        save_state({"last_pass": fingerprint})
+        if fp_after != fp:
+            warn_user("Guardrails: the full check passed but modified files while running"
+                      " (formatter?). Re-run it, or review the changes it made.")
+        state.pop("retries", None)
+        g.save_session(session, state)
         sys.exit(0)
 
-    retries = state.get("retries", {}) if state.get("session") == session else {}
-    count = retries.get("count", 0) + 1
-    save_state({"last_pass": state.get("last_pass"), "session": session, "retries": {"count": count}})
-    max_retries = int(cfg.get("STOP_GATE_MAX_RETRIES") or 2)
-
-    if count <= max_retries:
+    retries = state.get("retries", 0) + 1 if event.get("stop_hook_active") else 1
+    state["retries"] = retries
+    g.save_session(session, state)
+    max_retries = g.int_setting(cfg, "STOP_GATE_MAX_RETRIES", 2)
+    if retries <= max_retries:
         g.block(
-            f"Stop gate: the full check failed (attempt {count} of {max_retries}).\n"
+            f"Stop gate: the full check failed (attempt {retries} of {max_retries}).\n"
             f"Command: {cmd}\n{g.tail(output)}\n"
             "Fix the root cause. Don't add suppressions, skip tests or edit check configuration."
             " If the failure isn't caused by your change, or can't be fixed within the task,"
             " stop and explain it under 'Not passing' in your final report."
         )
-    # Out of retries: let the turn end, but make sure the human sees it.
-    print(json.dumps({
-        "systemMessage": f"Stop gate: the full check is still failing after {max_retries} retries."
-                         f" The work is NOT verified. Command: {cmd}"
-    }))
-    sys.exit(0)
+    warn_user(f"Guardrails: the full check is still failing after {max_retries} retries."
+              f" This work is NOT verified. Command: {cmd}")
 
 
-main()
+if __name__ == "__main__":
+    try:
+        main()
+    except SystemExit:
+        raise
+    except Exception as exc:  # visible, but never traps the session
+        warn_user(f"Guardrails: the stop gate crashed ({type(exc).__name__}: {exc})."
+                  " This work is NOT verified.")
