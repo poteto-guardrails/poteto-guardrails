@@ -1,0 +1,7 @@
+# Example only: the Python version of the same idea. Merge into pyproject.toml.
+[tool.ruff.lint]
+extend-select = ["TID251"]
+
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+"time.sleep".msg = "Sleeping to wait for state hides a race. Wait on the event or future that signals readiness (see app/sync.py)."
+"requests".msg = "Use app.http.client, which sets timeouts, retries and tracing."

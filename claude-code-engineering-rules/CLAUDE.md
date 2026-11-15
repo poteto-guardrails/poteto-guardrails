@@ -1,47 +1,34 @@
-# Engineering operating principles
+# How to work in this repository
 
-These instructions translate Lauren Tan’s presentation **“All Code Is Slop (Except Mine)”** into Claude Code defaults. The central claim is that trust comes from investing in the agent environment—not from more elaborate natural-language rules.
+Hooks in `.claude/settings.json` enforce the hard rules (checks after edits, a test gate before you finish, no new suppressions, protected config). This file covers only what needs judgment.
 
-## Primary objective
+## Before coding
+- State your assumptions. If the request has more than one reasonable reading, name them and ask. Don't pick one silently.
+- If no one is available to answer (an unattended or scheduled run), take the most conservative reading, write it down under **Assumptions**, and avoid anything that can't be undone.
+- For multi-step work, write a short plan where each step has its own check: `1. <step> → verify: <command or observation>`.
+- Bug fix: first write a test that reproduces the bug and fails, then make it pass.
 
-Increase throughput while maintaining or improving quality. Quality and productivity are not traded off; the environment makes the right thing the easy/default thing.
+## Writing code
+- Write the least code that solves the request. No unrequested features, configurability, single-use abstractions or handling for impossible cases.
+- Every changed line must trace to the request. Clean up only what your own change made unused.
+- Match the existing style (formatting, naming, file layout). Don't match existing *patterns* that are listed in `.claude/rules/bans.md` or that the checks reject. New code follows the intended pattern, not the nearest example.
+- Fix the root cause. Don't use timers, retries, polling, casts or fallbacks to make a symptom disappear.
+- Don't write a comment that justifies a shortcut. If the right fix is out of reach, stop and report it.
 
-## Order of preference (inverted pyramid)
+## Guardrails belong to humans
+- Don't edit lint, type-check, CI, hook or settings configuration. Edits there require approval for a reason.
+- If a check seems wrong, or you can't pass it without a suppression, stop and explain under **Not passing**.
+- If you see a mistake that a check could have caught (yours or the codebase's), propose the check under **Guardrail candidates**. Don't build it unless asked; humans use `/add-guardrail` for that.
+- Never merge, deploy or force-push.
 
-When a quality or correctness problem appears, prefer the strongest enforceable solution:
+## Verifying
+- User-visible change: use the `verify-feature` skill, refer to features by their names in `docs/feature-map.md`, and keep the evidence.
+- Never say a check passed unless you ran it and saw it pass.
 
-1. **Architecture and API design** that makes the incorrect approach impossible or unnatural.
-2. **Deterministic enforcement** (types, compiler, linters, formatters, dependency-boundary checks, tests, CI).
-3. **Runtime and formal verification** appropriate to risk.
-4. **Written judgment guidance** (these files, skills, agents.md) only for decisions that genuinely require judgment.
-
-Do not solve a problem that can be prevented or detected mechanically by adding another paragraph of instructions. Markdown is the weakest control.
-
-## Working posture
-
-- The codebase is the primary input to future agents. Treat it as a garden that must stay healthy under high-volume contribution.
-- Inspect architecture, conventions, scripts, tests, and existing guardrails before changing code.
-- Do not copy workarounds, anti-patterns, technical debt, or obsolete patterns simply because they already exist.
-- Prefer simple, explicit, maintainable designs. Avoid cleverness and hidden behavior.
-- Keep changes focused. Unrelated cleanup is in scope only when it is required for correctness or to prevent immediate recurrence of a defect.
-- Discover repository tools and conventions; do not invent them.
-- Preserve existing behavior unless the task explicitly changes it.
-
-## Verification is part of implementation
-
-- Define expected behavior and important invariants before risky changes.
-- Run the most relevant deterministic checks that exist.
-- For user-visible or integration changes, exercise the real system and collect concrete evidence.
-- Never claim a check passed unless it was run and passed. State what was not run and why.
-- With agents, the cost of producing code falls dramatically. Investing substantially more effort in verification becomes economically rational. Prefer comprehensive, cost-effective verification over minimizing the number of tests.
-
-## Autonomy and safety
-
-- Autonomy is earned by the strength of the environment, not declared.
-- Never bypass, weaken, or suppress a failing check merely to make a change pass.
-- Do not merge, deploy, or perform destructive operations unless the task and repository policy explicitly authorize it.
-- When the environment is sufficiently strong, low-risk changes and certain automated remediation loops can proceed with reduced line-by-line human review.
-
-## Detailed guidance
-
-Files under `.claude/rules/` expand the principles above. Prefer the repository’s actual guardrails over the prose in these files. When the environment is incomplete, improve the environment.
+## Final report (every task that changed files)
+- **Done**: what changed, in one or two lines.
+- **Checks**: each command run and its result.
+- **Not passing / not run**: with reasons.
+- **Assumptions**
+- **Noticed, not touched**: debt, dead code or bugs outside the task's scope.
+- **Guardrail candidates**: a recurring mistake, plus the deterministic check that would prevent it.
