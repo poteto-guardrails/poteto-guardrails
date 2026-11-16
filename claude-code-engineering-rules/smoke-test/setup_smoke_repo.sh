@@ -16,6 +16,7 @@ cd "$DEST"
 git init -q
 
 cp -R "$PACK/.claude" "$PACK/CLAUDE.md" "$PACK/docs" "$PACK/examples" .
+printf '\n# Python bytecode\n__pycache__/\n*.py[cod]\n\n# Generated Claude runtime-verification evidence\n.claude/verification-runs/\n' >> .gitignore
 rm -rf .claude/tests
 
 mkdir -p src

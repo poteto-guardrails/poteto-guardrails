@@ -50,7 +50,7 @@ def main():
         print(f"FULL CHECK: {result} (exit {code}), but the check modified files while running,"
               f" so the result was NOT recorded. Review the changes and run it again. `{cmd}`")
         return 4
-    g.write_record(fp, cmd, code, seconds, "check.py", os.environ.get("CLAUDE_SESSION_ID"))
+    g.write_record(fp, cmd, code, seconds, "check.py", os.environ.get("CLAUDE_SESSION_ID"), output)
     print(f"FULL CHECK: {result} (exit {code}, {seconds}s). Recorded for working tree {fp[:12]}. `{cmd}`")
     return code
 

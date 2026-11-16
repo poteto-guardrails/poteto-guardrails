@@ -13,7 +13,7 @@ The goal is evidence that the requested behaviour happens. A page that renders o
    ```
    python3 .claude/tools/verify.py --feature <ID> --scenario <ID> --task <short-task-name>
    ```
-   The runner enforces the driver contract, stores evidence under `verification/<task>/` and prints a one-line result. Quote that line in your report.
+   The runner enforces the driver contract, stores each run under `.claude/verification-runs/<task>/` and prints a one-line result. Quote that line in your report.
 4. **Read the evidence** the runner lists, and check that it shows *your* expected outcome. If it doesn't, the scenario hasn't passed, whatever the exit code says.
 5. **Results that aren't a pass:**
    - `NOT CONFIGURED`, or the app can't run here: report the behaviour as **unverified at runtime** and say what a human should check.

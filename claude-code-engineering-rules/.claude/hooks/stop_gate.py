@@ -41,18 +41,25 @@ def main():
         sys.exit(0)
     if not changed:
         sys.exit(0)
-    if g.record_is_valid(g.find_record(fp, cmd), fp, cmd):
+    record = g.find_record(fp, cmd)
+    if g.record_is_valid(record, fp, cmd):
         sys.exit(0)
 
-    timeout = g.int_setting(cfg, "FULL_CHECK_TIMEOUT", 840)
-    code, output, seconds = g.run(cmd, timeout)
-    fp_after = g.fingerprint()
-    if fp is not None and fp_after == fp:
-        g.write_record(fp, cmd, code, seconds, "stop_gate", session)
-    if code == 0:
-        if fp_after != fp:
+    # Reuse a failure for the identical tree and command too. Claude is sent back
+    # with the original diagnostics; a changed tree gets a new fingerprint and run.
+    if g.record_is_current(record, fp, cmd):
+        code = record.get("exit_code", 1)
+        output = record.get("output_tail", "")
+    else:
+        timeout = g.int_setting(cfg, "FULL_CHECK_TIMEOUT", 840)
+        code, output, seconds = g.run(cmd, timeout)
+        fp_after = g.fingerprint()
+        if fp is not None and fp_after == fp:
+            g.write_record(fp, cmd, code, seconds, "stop_gate", session, output)
+        elif code == 0:
             warn_user("Guardrails: the full check passed but modified files while running"
                       " (formatter?). Re-run it, or review the changes it made.")
+    if code == 0:
         state.pop("retries", None)
         g.save_session(session, state)
         sys.exit(0)

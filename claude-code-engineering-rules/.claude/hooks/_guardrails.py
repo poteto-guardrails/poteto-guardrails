@@ -14,7 +14,7 @@ import sys
 import tempfile
 import time
 
-PACK_VERSION = "4.0.0"
+PACK_VERSION = "4.1.0"
 
 
 class GuardError(Exception):
@@ -149,7 +149,7 @@ def git_dir():
 
 def _pathspec():
     """Paths left out of the fingerprint: evidence folders etc. (FINGERPRINT_EXCLUDE, comma-separated)."""
-    excludes = load_config().get("FINGERPRINT_EXCLUDE", "verification")
+    excludes = load_config().get("FINGERPRINT_EXCLUDE", ".claude/verification-runs")
     return ["--", "."] + [f":(exclude){p.strip()}" for p in excludes.split(",") if p.strip()]
 
 
@@ -232,8 +232,8 @@ def _record_path(fp, command):
     return os.path.join(state_root(), "records", key + ".json")
 
 
-def write_record(fp, command, exit_code, seconds, runner, session):
-    """Store provenance for a full-check run. Only called when the tree didn't change during the run."""
+def write_record(fp, command, exit_code, seconds, runner, session, output=""):
+    """Store provenance and bounded output for a check on an unchanged tree."""
     if fp is None:
         return None
     record = {
@@ -246,6 +246,7 @@ def write_record(fp, command, exit_code, seconds, runner, session):
         "duration_s": seconds,
         "runner": runner,
         "session": session or "unknown",
+        "output_tail": tail(output, 80),
     }
     _write_json(_record_path(fp, command), record)
     return record
@@ -258,11 +259,12 @@ def find_record(fp, command):
     return rec or None
 
 
-def record_is_valid(rec, fp, command):
-    """Valid = a passing run of exactly this command on exactly this working tree.
+def record_is_current(rec, fp, command):
+    """A current result (pass or fail) for exactly this command and working tree."""
+    return bool(rec) and rec.get("pack_version") == PACK_VERSION \
+        and rec.get("fingerprint") == fp and rec.get("command") == command
 
-    Which session ran it doesn't matter: the record is bound to tree content, so if
-    two sessions share a working tree, the check really did run on their combined work.
-    """
-    return bool(rec) and rec.get("passed") is True and rec.get("fingerprint") == fp \
-        and rec.get("command") == command
+
+def record_is_valid(rec, fp, command):
+    """A current passing result for exactly this command and working tree."""
+    return record_is_current(rec, fp, command) and rec.get("passed") is True

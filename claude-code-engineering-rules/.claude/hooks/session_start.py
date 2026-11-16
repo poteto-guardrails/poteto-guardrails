@@ -16,7 +16,10 @@ cfg = g.load_config()
 # skips turns where the tree still matches it (questions, reviews) and checks everything else.
 if session:
     state = g.load_session(session)
-    if not (event.get("source") == "resume" and state.get("baseline")):
+    # SessionStart can fire for startup, resume, clear, and compact.  The baseline
+    # belongs to the session, not to a particular context window: resetting it on
+    # compaction would bless edits made earlier in the same session and let Stop skip.
+    if not state.get("baseline"):
         state["baseline"] = g.fingerprint()
     g.save_session(session, state)
 

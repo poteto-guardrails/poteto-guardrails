@@ -244,6 +244,16 @@ class StopGateAndCheck(unittest.TestCase):
         self.assertEqual(self.stop()[0], 0)
         self.assertEqual(self.runs(), 0)
 
+    def test_compaction_preserves_original_baseline(self):
+        self.start("compact-session")
+        self.r.write("broken", "")
+        # SessionStart fires again after context compaction; this must not bless the edit.
+        self.r.hook("session_start.py", {"session_id": "compact-session", "source": "compact"})
+        code, _, err = self.stop("compact-session")
+        self.assertEqual(code, 2)
+        self.assertIn("full check failed", err)
+        self.assertEqual(self.runs(), 1)
+
     def test_retry_chain_then_warn_then_new_chain(self):
         self.start()
         self.r.write("broken", "")
@@ -266,6 +276,22 @@ class StopGateAndCheck(unittest.TestCase):
         self.assertIn("NOT verified", out)
         self.assertIn("attempt 2", self.stop("B", True)[2])   # B unaffected by A's warning
 
+    def test_failed_check_record_is_reused_until_tree_changes(self):
+        self.start()
+        self.r.write("broken", "")
+        self.assertEqual(self.stop()[0], 2)
+        self.assertEqual(self.runs(), 1)
+        # Same tree: reuse the original failure and diagnostics, don't rerun.
+        code, _, err = self.stop(active=True)
+        self.assertEqual(code, 2)
+        self.assertIn("full check failed", err)
+        self.assertEqual(self.runs(), 1)
+        # A changed tree invalidates the failed record and triggers a fresh check.
+        os.remove(self.r.path("broken"))
+        self.r.write("fixed.txt", "the tree has changed")
+        self.assertEqual(self.stop(active=True)[0], 0)
+        self.assertEqual(self.runs(), 2)
+
     def test_check_py_record_is_reused_then_invalidated(self):
         self.start()
         self.r.write("feature.txt", "v1")
@@ -280,13 +306,13 @@ class StopGateAndCheck(unittest.TestCase):
         self.assertEqual(self.stop()[0], 0)
         self.assertEqual(self.runs(), 2, "tree changed, so the gate ran the check again")
 
-    def test_verification_evidence_does_not_invalidate(self):
+    def test_only_generated_artifacts_are_excluded(self):
         self.start()
         self.r.write("feature.txt", "v1")
         self.assertEqual(self.r.tool("check.py")[0], 0)
-        self.r.write("verification/t1/chat-sidebar/empty/shot.txt", "evidence")
+        self.r.write(".claude/verification-runs/t1/shot.txt", "generated evidence")
         self.assertEqual(self.r.tool("check.py", "--status")[0], 0)
-        self.r.write("src/new.txt", "real change")
+        self.r.write("verification/real-test-helper.py", "print('project-owned')")
         self.assertEqual(self.r.tool("check.py", "--status")[0], 5)
 
     def test_record_bound_to_command(self):
@@ -395,10 +421,38 @@ class VerifyDriver(unittest.TestCase):
         code, out = self.verify()
         self.assertEqual(code, 0)
         self.assertIn("RUNTIME: chat-sidebar / empty: PASS", out)
-        self.assertTrue(os.path.isfile(self.r.path("verification", "t1", "chat-sidebar", "empty", "sidebar-empty.txt")))
-        with open(self.r.path("verification", "t1", "log.jsonl")) as fh:
+        run_root = self.r.path(".claude", "verification-runs", "t1", "chat-sidebar", "empty")
+        run_dirs = [os.path.join(run_root, d) for d in os.listdir(run_root)]
+        self.assertEqual(len(run_dirs), 1)
+        self.assertTrue(os.path.isfile(os.path.join(run_dirs[0], "sidebar-empty.txt")))
+        with open(self.r.path(".claude", "verification-runs", "t1", "log.jsonl")) as fh:
             log = [json.loads(line) for line in fh]
         self.assertEqual(log[-1]["status"], "pass")
+
+    def test_evidence_path_traversal_rejected(self):
+        self.fake_driver("open(os.path.join(out,'e'),'w').write('not evidence');"
+                         "json.dump({'feature':f,'scenario':s,'status':'pass','summary':'',"
+                         "'evidence':['../README']},open(os.path.join(out,'result.json'),'w'))")
+        code, out = self.verify()
+        self.assertEqual(code, 4)
+        self.assertIn("escape the output directory", out)
+
+    def test_evidence_symlink_escape_rejected(self):
+        self.fake_driver("os.symlink(os.path.join(os.getcwd(),'README'),os.path.join(out,'e'));"
+                         "json.dump({'feature':f,'scenario':s,'status':'pass','summary':'',"
+                         "'evidence':['e']},open(os.path.join(out,'result.json'),'w'))")
+        code, out = self.verify()
+        self.assertEqual(code, 4)
+        self.assertIn("escape the output directory", out)
+
+    def test_repeated_runs_preserve_separate_evidence(self):
+        self.assertEqual(self.verify()[0], 0)
+        self.assertEqual(self.verify()[0], 0)
+        run_root = self.r.path(".claude", "verification-runs", "t1", "chat-sidebar", "empty")
+        run_dirs = os.listdir(run_root)
+        self.assertEqual(len(run_dirs), 2)
+        for run_dir in run_dirs:
+            self.assertTrue(os.path.isfile(os.path.join(run_root, run_dir, "sidebar-empty.txt")))
 
     def test_unsupported_and_unlisted(self):
         code, out = self.verify(scenario="offline")

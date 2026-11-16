@@ -12,7 +12,9 @@ DRIVER CONTRACT (any language; DRIVER_CMD in .claude/guardrails.env is the entry
 
 Anything else (missing or invalid result.json, status not matching the exit code, missing
 evidence, a crash or a timeout) is a CONTRACT VIOLATION and counts as not verified.
-Results are appended to verification/<task>/log.jsonl.
+Each execution gets a unique directory under .claude/verification-runs/<task>/;
+results are appended to that task's log.jsonl. Generated artifacts are excluded from
+fingerprinting; project-owned files under verification/ remain fingerprinted.
 
 Exit codes: 0 pass, 1 fail, 2 unknown feature, 3 not configured or unsupported, 4 violation.
 """
@@ -21,9 +23,9 @@ import json
 import os
 import re
 import shlex
-import shutil
 import sys
 import time
+import uuid
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "hooks"))
 import _guardrails as g  # noqa: E402
@@ -51,10 +53,34 @@ def violation(reason):
     return {"status": "violation", "summary": reason, "evidence": []}
 
 
+def _is_within(base, candidate):
+    base_real = os.path.realpath(base)
+    candidate_real = os.path.realpath(candidate)
+    try:
+        return os.path.commonpath([base_real, candidate_real]) == base_real
+    except ValueError:  # different drives on Windows
+        return False
+
+
+def _safe_evidence_file(out_dir, name):
+    if not name or "\x00" in name:
+        return False
+    # Treat either slash as a separator so Windows traversal is rejected on POSIX too.
+    portable = name.replace("\\", "/")
+    if portable.startswith("/") or re.match(r"^[A-Za-z]:", portable):
+        return False
+    if ".." in portable.split("/"):
+        return False
+    candidate = os.path.join(out_dir, *portable.split("/"))
+    return _is_within(out_dir, candidate) and os.path.isfile(candidate)
+
+
 def check_contract(out_dir, feature, scenario, code):
     path = os.path.join(out_dir, "result.json")
     if code == 124:
         return violation("driver timed out")
+    if not _is_within(out_dir, path):
+        return violation("result.json resolves outside the output directory")
     if not os.path.isfile(path):
         return violation(f"driver exited {code} without writing result.json")
     try:
@@ -74,9 +100,9 @@ def check_contract(out_dir, feature, scenario, code):
     evidence = res.get("evidence")
     if not isinstance(evidence, list) or not all(isinstance(e, str) for e in evidence):
         return violation("evidence must be a list of file names")
-    missing = [e for e in evidence if not os.path.isfile(os.path.join(out_dir, e))]
-    if missing:
-        return violation(f"evidence files missing: {missing}")
+    unsafe = [e for e in evidence if not _safe_evidence_file(out_dir, e)]
+    if unsafe:
+        return violation(f"evidence paths are missing or escape the output directory: {unsafe}")
     if status == "pass" and not evidence:
         return violation("a pass must include at least one evidence file")
     if not isinstance(res.get("summary", ""), str):
@@ -108,10 +134,18 @@ def main():
     note = "" if args.scenario in features[args.feature] else \
         " (note: scenario not listed in docs/feature-map.md; propose adding it)"
 
-    task_dir = os.path.join(g.project_dir(), "verification", args.task)
-    out_dir = os.path.join(task_dir, args.feature, args.scenario)
-    shutil.rmtree(out_dir, ignore_errors=True)
-    os.makedirs(out_dir)
+    artifact_root = os.path.join(g.project_dir(), ".claude", "verification-runs")
+    if not _is_within(g.project_dir(), artifact_root):
+        print("RUNTIME: NOT VERIFIED (artifact directory resolves outside the repository)")
+        return 4
+    os.makedirs(artifact_root, exist_ok=True)
+    if not _is_within(g.project_dir(), artifact_root):
+        print("RUNTIME: NOT VERIFIED (artifact directory resolves outside the repository)")
+        return 4
+    task_dir = os.path.join(artifact_root, args.task)
+    run_id = time.strftime("%Y%m%dT%H%M%S") + "-" + uuid.uuid4().hex[:12]
+    out_dir = os.path.join(task_dir, args.feature, args.scenario, run_id)
+    os.makedirs(out_dir, exist_ok=False)
     cmd = (f"{driver} --feature {shlex.quote(args.feature)} --scenario {shlex.quote(args.scenario)}"
            f" --out {shlex.quote(out_dir)}")
     code, output, seconds = g.run(cmd, g.int_setting(cfg, "DRIVER_TIMEOUT", 300))
@@ -120,13 +154,19 @@ def main():
     result = check_contract(out_dir, args.feature, args.scenario, code)
 
     rel_out = g.rel_path(out_dir)
-    with open(os.path.join(task_dir, "log.jsonl"), "a", encoding="utf-8") as fh:
-        fh.write(json.dumps({
+    log_entry = json.dumps({
             "feature": args.feature, "scenario": args.scenario, "status": result["status"],
             "summary": result["summary"], "evidence": [f"{rel_out}/{e}" for e in result["evidence"]],
             "driver_exit": code, "duration_s": seconds, "ran_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
             "tree": (g.fingerprint() or "no-git")[:12], "command": cmd,
-        }) + "\n")
+            "run_id": run_id,
+        }) + "\n"
+    os.makedirs(task_dir, exist_ok=True)
+    log_fd = os.open(os.path.join(task_dir, "log.jsonl"), os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+    try:
+        os.write(log_fd, log_entry.encode("utf-8"))
+    finally:
+        os.close(log_fd)
 
     label = {"pass": "PASS", "fail": "FAIL", "unsupported": "NOT RUN (driver doesn't support this scenario)",
              "violation": "NOT VERIFIED (driver contract violation)"}[result["status"]]

@@ -1,8 +1,8 @@
-# Claude Code engineering rules — v4 (hardening release)
+# Claude Code engineering rules — v4.1 (targeted hardening)
 
 A Claude Code setup based on Lauren Tan's talk **"All Code Is Slop (Except Mine)"** (AI Engineer, Nov 2026) and the **Karpathy guidelines** for LLM coding.
 
-v4 keeps v3's architecture and hardens the implementation. Every change came out of the v3 review round (reviewer → counter-review → agreed V4 order) and has its own test.
+v4.1 keeps v4's architecture and closes defects found in the V4 review. It preserves session baselines across context compaction, confines evidence to unique run directories, narrows generated-artifact exclusions, and avoids rerunning an unchanged failing check.
 
 > **To the reviewer:** "What changed from v3" maps each review point to the change and its test. "Open questions" at the end is where your next round of feedback would help most.
 
@@ -37,9 +37,9 @@ The talk ranks the ways to make agents trustworthy: (1) architecture and API des
 | `.claude/hooks/post_edit_check.py` | PostToolUse: runs `FAST_CHECK_CMD` on the edited file and sends failures back to Claude |
 | `.claude/hooks/stop_gate.py` | Stop: a turn that changed the tree can't end until the full check has passed on *that exact tree*. Limited retries per stop chain, then it warns you. Never traps the session |
 | `.claude/hooks/session_start.py` | Records the session's baseline tree; tells Claude which checks exist and how to run them |
-| `.claude/tools/check.py` | Claude runs the full check once, sees the result, and the result is **recorded with provenance**. The stop gate reuses a valid record instead of running the check again |
+| `.claude/tools/check.py` | Claude runs the full check once, sees the result, and the result is **recorded with provenance**. The stop gate reuses the result (pass or fail) for the identical tree and command |
 | `.claude/tools/verify.py` | Runs one feature scenario through the **driver contract** and rejects drivers that break it |
-| `.claude/tests/test_guardrails.py` | 36 tests (92 assertion statements, many run in loops over cases), checked by deliberately breaking the code |
+| `.claude/tests/test_guardrails.py` | 41 tests (including new compaction, evidence-path, concurrency and failed-check reuse regressions) |
 | `smoke-test/` | Disposable-repo builder plus the **live smoke test checklist (release gate)** |
 | `CLAUDE.md` | Judgment rules (Karpathy merged with the talk) and the final report format |
 | `.claude/rules/bans.md` | Banned patterns. Each row must name its enforcing check |
@@ -63,27 +63,30 @@ bash /path/to/pack/smoke-test/setup_smoke_repo.sh /tmp/guardrail-smoke
 # 3. Install into the real repository (cp -n won't overwrite existing files)
 cd /path/to/your/repo
 cp -rn /path/to/pack/{CLAUDE.md,.claude,docs} .
+# Add the generated evidence directory to your existing .gitignore (without replacing it)
+grep -qxF '.claude/verification-runs/' .gitignore 2>/dev/null || printf '\n# Generated Claude runtime-verification evidence\n.claude/verification-runs/\n' >> .gitignore
+grep -qxF '__pycache__/' .gitignore 2>/dev/null || printf '\n# Python bytecode\n__pycache__/\n*.py[cod]\n' >> .gitignore
 rm -rf .claude/tests          # optional: tests are for the pack, not your repo
 ```
 
-Then fill in `.claude/guardrails.env`, replace the example rows in `bans.md` and `feature-map.md`, decide whether `verification/` is committed or ignored, and run `/hooks` to confirm. Merge any existing `CLAUDE.md` or `settings.json` by hand. On Windows, change `python3` to `python` or `py` in `settings.json` (untested; see limitations).
+Then fill in `.claude/guardrails.env`, replace the example rows in `bans.md` and `feature-map.md`, keep `.claude/verification-runs/` as generated output (it is excluded from fingerprints), and run `/hooks` to confirm. Merge any existing `CLAUDE.md` or `settings.json` by hand. On Windows, change `python3` to `python` or `py` in `settings.json` (untested; see limitations).
 
 ## How the main pieces work
 
 **Fail-closed guard.** It exits 0 only after inspecting a well-formed edit from a supported tool (Edit, Write, MultiEdit, NotebookEdit). Malformed JSON, missing fields, unknown tools, a wrong event, an invalid custom regex or any internal exception: blocked, with a reason. `onFailure: "block"` covers what the script can't catch itself: it failing to start, timing out, or the interpreter being missing. It's set **only** on this hook. A fail-closed Stop hook would trap the session if Python broke.
 
-**Verification records.** Each full-check run is stored in `.git/claude-guardrails/records/`, keyed by (working-tree fingerprint, command). Each record holds the fingerprint, command, exit code, time, duration, runner (`check.py` or `stop_gate`) and session. Validity is **computed when read, never stored**: a record counts only if it passed, its command equals the current `FULL_CHECK_CMD`, and its fingerprint equals the tree right now.
+**Verification records.** Each full-check run is stored in `.git/claude-guardrails/records/`, keyed by (working-tree fingerprint, command). Each record holds the fingerprint, command, exit code, bounded diagnostic output, time, duration, runner (`check.py` or `stop_gate`) and session. A record is current only when its pack version, command and fingerprint match. A current passing record allows the turn to finish; a current failing record reuses the original diagnostics without rerunning the same check. Any tree or command change requires a fresh run.
 
-The fingerprint covers HEAD's tree plus staged, unstaged and untracked content. So committing in the middle of a session, renames, deletions and new folders all invalidate it. `verification/` is excluded (`FINGERPRINT_EXCLUDE`), so saving evidence doesn't force a re-run. If the check itself modifies files (a formatter, say), the result isn't recorded.
+The fingerprint covers HEAD's tree plus staged, unstaged and untracked content. So committing in the middle of a session, renames, deletions and new folders all invalidate it. Only `.claude/verification-runs/` is excluded (`FINGERPRINT_EXCLUDE`), so generated evidence doesn't force a re-run while project-owned files under `verification/` remain fingerprinted. If the check itself modifies files (a formatter, say), the result isn't recorded.
 
 *Why a record from another session is accepted:* the record is bound to the tree's content, not to whoever ran it. If two sessions share one working tree, the check really did run on their combined work, so it verifies exactly what exists. What sessions must not share is **retry state**, and that's now per session.
 
 **Stop gate.** In order:
 1. The tree matches this session's baseline → nothing to check.
 2. A valid record exists → done.
-3. Otherwise, run the check now. If it fails, Claude is sent back up to `STOP_GATE_MAX_RETRIES` times per stop chain (a new chain starts when `stop_hook_active` is false). After that the turn ends with a user-visible **NOT verified** warning.
+3. Otherwise, use a recorded result for this exact tree and command, or run the check and record it. If it fails, Claude is sent back up to `STOP_GATE_MAX_RETRIES` times per stop chain (a new chain starts when `stop_hook_active` is false). An unchanged failure reuses its saved diagnostics; a changed tree triggers a fresh check. After the retry limit, the turn ends with a user-visible **NOT verified** warning.
 
-**Driver contract** (full text at the top of `verify.py`). The driver is called as `DRIVER_CMD --feature ID --scenario ID --out DIR` and must exit 0 (pass), 1 (fail) or 3 (unsupported). It must write `DIR/result.json` with the requested feature and scenario, a status that matches the exit code, a summary, and evidence files that exist; a pass needs at least one. Anything else is a contract violation and counts as **not verified**. Every run is appended to `verification/<task>/log.jsonl`.
+**Driver contract** (full text at the top of `verify.py`). The driver is called as `DRIVER_CMD --feature ID --scenario ID --out DIR` and must exit 0 (pass), 1 (fail) or 3 (unsupported). It must write `DIR/result.json` with the requested feature and scenario, a status that matches the exit code, a summary, and evidence files that exist; a pass needs at least one. Anything else is a contract violation and counts as **not verified**. Every run gets a unique directory under `.claude/verification-runs/<task>/<feature>/<scenario>/<run-id>/`; a task-level `log.jsonl` is appended without deleting earlier evidence.
 
 ## What changed from v3
 
@@ -99,6 +102,11 @@ The fingerprint covers HEAD's tree plus staged, unstaged and untracked content. 
 | Verification provenance *(reviewer addition)* | Record: session, command, fingerprint, exit, time, runner; validity computed when read | `test_record_bound_to_command`, `test_fingerprint_sees_…` |
 | Committing broken code skipped the gate (new) | HEAD's tree is in the fingerprint; the session baseline replaces "clean tree" | `test_committing_broken_code_is_still_caught` |
 | Driver contract undefined | Executable contract in `verify.py`; reference driver; feature map holds IDs, not driver commands | `VerifyDriver` (8 violation types) |
+| Compaction could reset the session baseline | Baseline is initialised only once per session and preserved across every SessionStart source | `test_compaction_preserves_original_baseline` |
+| Driver evidence could escape its output directory | Reject absolute paths, traversal and symlinks resolving outside the run directory | `test_evidence_path_traversal_rejected`, `test_evidence_symlink_escape_rejected` |
+| Concurrent driver runs could delete each other's evidence | Unique run directory per execution; previous evidence is retained | `test_repeated_runs_preserve_separate_evidence` |
+| Fingerprint exclusion hid project-owned `verification/` files | Exclude only `.claude/verification-runs/` | `test_only_generated_artifacts_are_excluded` |
+| Failed full checks could run repeatedly on unchanged trees | Stop gate reuses current failed record and original diagnostics until the tree changes | `test_failed_check_record_is_reused_until_tree_changes` |
 | Timer rule too broad | Reworded: legitimate when it's the design, banned as a symptom mask | — |
 | Notebook edits uncovered | NotebookEdit in both matchers; compared against the cell's current source | `test_notebook_edit` |
 | No live test | `smoke-test/`: disposable repo plus a 15-step checklist with expected results | Run it: see below |
@@ -110,7 +118,7 @@ The fingerprint covers HEAD's tree plus staged, unstaged and untracked content. 
 
 **Not yet run.** Claude Code 2.1.325 was installed in the build environment, but it needs an authenticated account to run a session. What *was* confirmed there: the installed binary contains the `onFailure: "block"` handling for command hooks, including a notice that it's ignored on some events (which is why it's set only on PreToolUse). The setup script was also exercised end to end without Claude: guard blocks, check records, the driver passes, and it refuses to overwrite a non-empty folder.
 
-**v4 should be called "hardened" only after `smoke-test/SMOKE-TEST.md` S0 to S12 pass on a real install.**
+**v4.1 should be called "hardened" only after `smoke-test/SMOKE-TEST.md` S0 to S12 pass on a real install.**
 
 ## Known limitations
 
@@ -124,12 +132,11 @@ The fingerprint covers HEAD's tree plus staged, unstaged and untracked content. 
 ## Open questions for the reviewer
 
 1. **Accepting records across sessions:** is content-binding sufficient, or do you see a case where a valid record for an identical tree should still be rejected?
-2. **Should `check.py` refuse to run** when the stop gate's fingerprint exclusions hide a large change (for example a committed `verification/` folder that contains code)?
-3. **Exit code 3 ("unsupported") in the driver contract:** should unsupported scenarios block the final report, or is "report as not run" enough?
-4. **Minimum version policy:** if S11 passes on 2.1.295 but older versions ignore `onFailure` silently, should `session_start.py` detect the version and warn?
+2. **Exit code 3 ("unsupported") in the driver contract:** should unsupported scenarios block the final report, or is "report as not run" enough?
+3. **Minimum version policy:** if S11 passes on 2.1.295 but older versions ignore `onFailure` silently, should `session_start.py` detect the version and warn?
 
 ## Credits
 
 - Lauren Tan, *All Code Is Slop (Except Mine)*, AI Engineer, November 2026.
 - Andrej Karpathy's observations on LLM coding pitfalls, via the `karpathy-guidelines` skill ([multica-ai/andrej-karpathy-skills](https://github.com/multica-ai/andrej-karpathy-skills), MIT). Paraphrased, not copied.
-- v2 by the original author. v3 and v4 by adversarial review rounds between the author's reviewer and Claude.
+- v2 by the original author. v3, v4 and v4.1 by adversarial review rounds between the author's reviewer and Claude.
