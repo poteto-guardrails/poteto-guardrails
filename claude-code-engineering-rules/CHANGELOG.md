@@ -1,5 +1,18 @@
 # Changelog
 
+## 4.1.2 — scope failure replay to the stop chain
+
+From review of 4.1.1:
+
+- **Saved failures are reused only within the stop chain that produced them.** That means the same session, the same chain (`stop_hook_active=false` starts a new one), written by the stop gate, tracked files unchanged, and not a timeout. A new user turn, another session, or a failure recorded by `check.py` always gets a fresh run. Passing records keep their fingerprint-based reuse. A bounded retry chain replaces any need for a time-based expiry.
+- **The saved-failure message no longer says "fix the root cause".** A replay now says not to change files just to trigger a new check. It points to `check.py` for a fresh run after untracked or transient changes, and says to report honestly if the failure persists. Fresh failures keep the "investigate and fix" guidance.
+- **Smoke test:** S6, S6a (replay within the chain), S6b (a new turn runs fresh) and S7 now count real check runs with an invocation counter in a git-ignored `.smoke/check-runs.log`. Record files can't be used for this, because a re-run overwrites them.
+- **Tests:** 48 pass in a single run (about 19 s). The new tests are `test_saved_failure_message_does_not_say_fix_root_cause`, `test_saved_failure_only_replays_within_its_stop_chain`, `test_saved_failure_is_not_replayed_in_another_session` and `test_check_py_failure_is_not_replayed_by_stop_gate`.
+- **Mutation testing:** removing the chain binding, the chain renewal, the timeout exclusion or the conditional message each fails the suite. Removing only the session or runner condition doesn't change behaviour: chain IDs are random per session, and `check.py` records carry no chain. So those two conditions are a backstop, not separately testable.
+- The smoke sequence S6 to S7 was simulated by calling the hooks directly in a disposable repo. Counts: S6 chain = 1 run, S6b = +1, S7 = +1 (check.py only).
+
+Code freeze: no further changes until the live smoke test (S0 to S12) has been run on a real Claude Code install.
+
 ## 4.1.1 — fix for reused failure results
 
 4.1.0 started reusing a failed full-check result while the tracked files were unchanged. Review found three problems with that, each now fixed and tested:

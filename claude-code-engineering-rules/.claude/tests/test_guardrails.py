@@ -313,6 +313,50 @@ class StopGateAndCheck(unittest.TestCase):
         self.assertEqual(self.r.tool("check.py")[0], 0)   # fresh run replaces the saved failure
         self.assertEqual(self.stop(active=True)[0], 0)
 
+    def test_saved_failure_message_does_not_say_fix_root_cause(self):
+        self.start()
+        self.r.write("broken", "")
+        _, _, fresh = self.stop()
+        self.assertIn("Investigate and fix the underlying problem", fresh)
+        self.assertNotIn("SAVED result", fresh)
+        _, _, saved = self.stop(active=True)
+        self.assertIn("SAVED result", saved)
+        self.assertIn("Don't change files just to trigger a new check", saved)
+        self.assertNotIn("Investigate and fix", saved)
+        self.assertNotIn("Fix the root cause", saved)
+
+    def test_saved_failure_only_replays_within_its_stop_chain(self):
+        self.start()
+        self.r.write("broken", "")
+        self.assertEqual(self.stop()[0], 2)
+        self.assertEqual(self.stop(active=True)[0], 2)
+        self.assertEqual(self.runs(), 1, "same chain: replayed")
+        code, _, err = self.stop(active=False)             # new user turn, files unchanged
+        self.assertEqual(code, 2)
+        self.assertNotIn("SAVED result", err)
+        self.assertEqual(self.runs(), 2, "new chain: fresh run")
+
+    def test_saved_failure_is_not_replayed_in_another_session(self):
+        self.start("A")
+        self.start("B")
+        self.r.write("broken", "")
+        self.assertEqual(self.stop("A")[0], 2)
+        self.assertEqual(self.runs(), 1)
+        code, _, err = self.stop("B", active=True)          # even mid-chain in B
+        self.assertEqual(code, 2)
+        self.assertNotIn("SAVED result", err)
+        self.assertEqual(self.runs(), 2, "other session: fresh run")
+
+    def test_check_py_failure_is_not_replayed_by_stop_gate(self):
+        self.start()
+        self.r.write("broken", "")
+        self.assertEqual(self.r.tool("check.py")[0], 1)
+        self.assertEqual(self.runs(), 1)
+        code, _, err = self.stop()
+        self.assertEqual(code, 2)
+        self.assertNotIn("SAVED result", err)
+        self.assertEqual(self.runs(), 2, "check.py failures belong to no stop chain")
+
     def test_timeouts_are_never_replayed(self):
         flag = tempfile.mktemp()
         self.r.set_env(f"FULL_CHECK_CMD=echo run >> '{self.ran}'; if [ -f '{flag}' ]; then sleep 5; fi; true\n"

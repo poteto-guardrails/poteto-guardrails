@@ -1,8 +1,8 @@
-# Claude Code engineering rules — v4.1.1
+# Claude Code engineering rules — v4.1.2
 
 A Claude Code setup based on Lauren Tan's talk **"All Code Is Slop (Except Mine)"** (AI Engineer, Nov 2026) and the **Karpathy guidelines** for LLM coding.
 
-v4.1.1 fixes how saved failure results are reused (see CHANGELOG.md). v4.1 kept v4's architecture and closed defects found in the V4 review. It preserves session baselines across context compaction, confines evidence to unique run directories, narrows generated-artifact exclusions, and avoids rerunning an unchanged failing check.
+v4.1.2 limits saved-failure reuse to the stop chain that produced it. v4.1.1 fixed how saved failure results are reused (see CHANGELOG.md). v4.1 kept v4's architecture and closed defects found in the V4 review. It preserves session baselines across context compaction, confines evidence to unique run directories, narrows generated-artifact exclusions, and avoids rerunning an unchanged failing check.
 
 > **To the reviewer:** "What changed from v3" maps each review point to the change and its test. "Open questions" at the end is where your next round of feedback would help most.
 
@@ -39,7 +39,7 @@ The talk ranks the ways to make agents trustworthy: (1) architecture and API des
 | `.claude/hooks/session_start.py` | Records the session's baseline tree; tells Claude which checks exist and how to run them |
 | `.claude/tools/check.py` | Claude runs the full check once, sees the result, and the result is **recorded with provenance**. The stop gate reuses the result (pass or fail) for the identical tree and command |
 | `.claude/tools/verify.py` | Runs one feature scenario through the **driver contract** and rejects drivers that break it |
-| `.claude/tests/test_guardrails.py` | 44 tests, run in about 18 seconds; each recent fix has been removed in turn to confirm a test fails |
+| `.claude/tests/test_guardrails.py` | 48 tests, run in about 19 seconds; each recent fix has been removed in turn to confirm a test fails |
 | `smoke-test/` | Disposable-repo builder plus the **live smoke test checklist (release gate)** |
 | `CLAUDE.md` | Judgment rules (Karpathy merged with the talk) and the final report format |
 | `.claude/rules/bans.md` | Banned patterns. Each row must name its enforcing check |
@@ -75,7 +75,7 @@ Then fill in `.claude/guardrails.env`, replace the example rows in `bans.md` and
 
 **Fail-closed guard.** It exits 0 only after inspecting a well-formed edit from a supported tool (Edit, Write, MultiEdit, NotebookEdit). Malformed JSON, missing fields, unknown tools, a wrong event, an invalid custom regex or any internal exception: blocked, with a reason. `onFailure: "block"` covers what the script can't catch itself: it failing to start, timing out, or the interpreter being missing. It's set **only** on this hook. A fail-closed Stop hook would trap the session if Python broke.
 
-**Verification records.** Each full-check run is stored in `.git/claude-guardrails/records/`, keyed by (working-tree fingerprint, command). Each record holds the fingerprint, command, exit code, bounded diagnostic output, time, duration, runner (`check.py` or `stop_gate`) and session. A record is current only when its pack version, command and fingerprint match. A current passing record allows the turn to finish; a current failing record is replayed, labelled as a saved result, instead of running the same check again. Timeouts are never replayed. Any tree or command change requires a fresh run, and `check.py` always runs fresh, which is how Claude recovers after fixing something outside version control (installed dependencies, a started service).
+**Verification records.** Each full-check run is stored in `.git/claude-guardrails/records/`, keyed by (working-tree fingerprint, command). Each record holds the fingerprint, command, exit code, bounded diagnostic output, time, duration, runner (`check.py` or `stop_gate`) and session. A record is current only when its pack version, command and fingerprint match. A current passing record allows the turn to finish; a failing record is replayed, labelled as a saved result, only within the same session and stop chain that produced it; a new turn, another session, or a `check.py` failure gets a fresh run. Timeouts are never replayed. Any tree or command change requires a fresh run, and `check.py` always runs fresh, which is how Claude recovers after fixing something outside version control (installed dependencies, a started service).
 
 The fingerprint covers HEAD's tree plus staged, unstaged and untracked content. So committing in the middle of a session, renames, deletions and new folders all invalidate it. Only `.claude/verification-runs/` is excluded (`FINGERPRINT_EXCLUDE`), so generated evidence doesn't force a re-run while project-owned files under `verification/` remain fingerprinted. If the check itself modifies files (a formatter, say), the result isn't recorded.
 
@@ -110,6 +110,8 @@ The fingerprint covers HEAD's tree plus staged, unstaged and untracked content. 
 | *(4.1.1)* Replayed failures hid fixes made outside version control | Replays are labelled `SAVED result` and point to `check.py` for a fresh run | `test_replayed_failure_is_labelled_and_check_py_refreshes_it` |
 | *(4.1.1)* One slow run became a sticky timeout | Timeouts (exit 124) are never replayed | `test_timeouts_are_never_replayed` |
 | *(4.1.1)* Pack-version binding of records untested | Test added | `test_records_from_another_pack_version_are_ignored` |
+| *(4.1.2)* Saved failures could be replayed in later turns or other sessions | Replay scoped to the same session and stop chain | `test_saved_failure_only_replays_within_its_stop_chain`, `…_not_replayed_in_another_session`, `test_check_py_failure_is_not_replayed_by_stop_gate` |
+| *(4.1.2)* Replay still said "fix the root cause" | Separate guidance for saved and fresh failures | `test_saved_failure_message_does_not_say_fix_root_cause` |
 | Timer rule too broad | Reworded: legitimate when it's the design, banned as a symptom mask | — |
 | Notebook edits uncovered | NotebookEdit in both matchers; compared against the cell's current source | `test_notebook_edit` |
 | No live test | `smoke-test/`: disposable repo plus a 15-step checklist with expected results | Run it: see below |
@@ -121,7 +123,7 @@ The fingerprint covers HEAD's tree plus staged, unstaged and untracked content. 
 
 **Not yet run.** Claude Code 2.1.325 was installed in the build environment, but it needs an authenticated account to run a session. What *was* confirmed there: the installed binary contains the `onFailure: "block"` handling for command hooks, including a notice that it's ignored on some events (which is why it's set only on PreToolUse). The setup script was also exercised end to end without Claude: guard blocks, check records, the driver passes, and it refuses to overwrite a non-empty folder.
 
-**v4.1.1 should be called "hardened" only after `smoke-test/SMOKE-TEST.md` S0 to S12 pass on a real install.**
+**v4.1.2 should be called "hardened" only after `smoke-test/SMOKE-TEST.md` S0 to S12 pass on a real install.**
 
 ## Known limitations
 

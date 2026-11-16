@@ -14,7 +14,7 @@ import sys
 import tempfile
 import time
 
-PACK_VERSION = "4.1.1"
+PACK_VERSION = "4.1.2"
 
 
 class GuardError(Exception):
@@ -232,7 +232,7 @@ def _record_path(fp, command):
     return os.path.join(state_root(), "records", key + ".json")
 
 
-def write_record(fp, command, exit_code, seconds, runner, session, output=""):
+def write_record(fp, command, exit_code, seconds, runner, session, output="", chain=None):
     """Store provenance and bounded output for a check on an unchanged tree."""
     if fp is None:
         return None
@@ -246,6 +246,7 @@ def write_record(fp, command, exit_code, seconds, runner, session, output=""):
         "duration_s": seconds,
         "runner": runner,
         "session": session or "unknown",
+        "chain": chain,
         "output_tail": tail(output, 80),
     }
     _write_json(_record_path(fp, command), record)
