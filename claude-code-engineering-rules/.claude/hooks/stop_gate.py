@@ -45,9 +45,14 @@ def main():
     if g.record_is_valid(record, fp, cmd):
         sys.exit(0)
 
-    # Reuse a failure for the identical tree and command too. Claude is sent back
-    # with the original diagnostics; a changed tree gets a new fingerprint and run.
-    if g.record_is_current(record, fp, cmd):
+    # Reuse a failure for the identical tree and command, so an untouched tree isn't
+    # re-checked on every retry. Timeouts are never reused: they say more about the
+    # machine at that moment than about the code. A replay is labelled as one and tells
+    # Claude how to get a fresh run, because some fixes (installing dependencies,
+    # starting a service) don't change any tracked file.
+    replay = None
+    if g.record_is_current(record, fp, cmd) and record.get("exit_code") != 124:
+        replay = record
         code = record.get("exit_code", 1)
         output = record.get("output_tail", "")
     else:
@@ -68,15 +73,24 @@ def main():
     state["retries"] = retries
     g.save_session(session, state)
     max_retries = g.int_setting(cfg, "STOP_GATE_MAX_RETRIES", 2)
+    replay_note = ""
+    if replay:
+        replay_note = (
+            f"\nThis is the SAVED result from {replay.get('ran_at', 'an earlier run')}"
+            f" ({replay.get('runner', 'unknown')}). No tracked file has changed since, so the check"
+            " wasn't run again. If you fixed something outside version control (installed"
+            " dependencies, started a service) or suspect a flaky test, run"
+            " `python3 .claude/tools/check.py` to get a fresh result.")
     if retries <= max_retries:
         g.block(
             f"Stop gate: the full check failed (attempt {retries} of {max_retries}).\n"
-            f"Command: {cmd}\n{g.tail(output)}\n"
+            f"Command: {cmd}\n{g.tail(output)}{replay_note}\n"
             "Fix the root cause. Don't add suppressions, skip tests or edit check configuration."
             " If the failure isn't caused by your change, or can't be fixed within the task,"
             " stop and explain it under 'Not passing' in your final report."
         )
-    warn_user(f"Guardrails: the full check is still failing after {max_retries} retries."
+    saved = " (saved result; run `python3 .claude/tools/check.py` for a fresh one)" if replay else ""
+    warn_user(f"Guardrails: the full check is still failing after {max_retries} retries{saved}."
               f" This work is NOT verified. Command: {cmd}")
 
 

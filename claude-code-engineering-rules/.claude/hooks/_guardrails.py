@@ -14,7 +14,7 @@ import sys
 import tempfile
 import time
 
-PACK_VERSION = "4.1.0"
+PACK_VERSION = "4.1.1"
 
 
 class GuardError(Exception):

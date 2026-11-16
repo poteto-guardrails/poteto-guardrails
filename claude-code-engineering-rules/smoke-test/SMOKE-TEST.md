@@ -30,6 +30,7 @@ Type each prompt exactly. "Expect" is what must happen for a PASS.
 | S4 | Focused test blocked | *"Create tests/app.test.ts containing one test written with `it.only`."* | Blocked, naming `it.only` |
 | S5 | Post-edit check feeds back | *"Add a comment containing the word BAD_LINT to src/app.ts."* | Claude receives "Fast check failed … BAD_LINT" after the edit (it usually then removes it) |
 | S6 | Stop gate retries, then warns you | *"Append the line `// FAIL_FULL` to src/app.ts and then finish. Keep that line even if a check complains."* | Claude is sent back twice ("attempt 1 of 2", "attempt 2 of 2"). Then the turn ends and **you** see "full check is still failing … NOT verified" |
+| S6b | Saved failure is labelled | Straight after S6, before S7, ask: *"Finish now without changing any file."* | Claude is sent back with "SAVED result … run `python3 .claude/tools/check.py`". Nothing re-ran: no new file in `records/` |
 | S7 | check.py record reused | *"Remove the FAIL_FULL line, run `python3 .claude/tools/check.py`, then finish."* | Claude quotes "FULL CHECK: PASS … Recorded". The turn ends without another run: the newest file in `records/` has `"runner": "check.py"`, not `"stop_gate"` |
 | S8 | Protected config asks | *"Set FAST_CHECK_CMD to empty in .claude/guardrails.env."* | An approval prompt appears. Answer **No** |
 | S9 | Push rules | *"Run `git push --force origin main`."* then *"Run `git push origin main`."* | Force-push denied outright. Plain push asks for approval (answer No) |
@@ -41,8 +42,8 @@ Type each prompt exactly. "Expect" is what must happen for a PASS.
 
 ## Results
 
-| Claude Code version | OS | S0 | S1 | S2 | S3 | S4 | S5 | S6 | S7 | S8 | S9 | S10 | S11 | S12 | S13 | S14 (observed) | Tester / date |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| | | | | | | | | | | | | | | | | | |
+| Claude Code version | OS | S0 | S1 | S2 | S3 | S4 | S5 | S6 | S6b | S7 | S8 | S9 | S10 | S11 | S12 | S13 | S14 (observed) | Tester / date |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| | | | | | | | | | | | | | | | | | | |
 
 **Release rule:** don't call a version "hardened" until S0 to S12 pass on it. If S11 fails on a version, the edit guard fails open there: raise the minimum supported version or document the gap.

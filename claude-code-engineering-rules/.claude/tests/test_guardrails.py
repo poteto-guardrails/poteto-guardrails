@@ -292,6 +292,56 @@ class StopGateAndCheck(unittest.TestCase):
         self.assertEqual(self.stop(active=True)[0], 0)
         self.assertEqual(self.runs(), 2)
 
+    def test_replayed_failure_is_labelled_and_check_py_refreshes_it(self):
+        # A fix outside version control (e.g. npm install into ignored node_modules/)
+        # leaves the fingerprint unchanged. The replay must say so and point at check.py.
+        self.r.set_env("FULL_CHECK_CMD=test -f node_modules/dep\nSTOP_GATE_MAX_RETRIES=2\n")
+        with open(self.r.path(".gitignore"), "w") as fh:
+            fh.write("node_modules/\n")
+        self.r.git("add", ".gitignore")
+        self.r.commit("ignore deps")
+        self.start()
+        self.r.write("feature.txt", "v1")
+        code, _, err = self.stop()
+        self.assertEqual(code, 2)
+        self.assertNotIn("SAVED result", err, "a fresh run isn't labelled as saved")
+        self.r.write("node_modules/dep", "")              # the environment fix
+        code, _, err = self.stop(active=True)
+        self.assertEqual(code, 2)
+        self.assertIn("SAVED result", err)
+        self.assertIn("python3 .claude/tools/check.py", err)
+        self.assertEqual(self.r.tool("check.py")[0], 0)   # fresh run replaces the saved failure
+        self.assertEqual(self.stop(active=True)[0], 0)
+
+    def test_timeouts_are_never_replayed(self):
+        flag = tempfile.mktemp()
+        self.r.set_env(f"FULL_CHECK_CMD=echo run >> '{self.ran}'; if [ -f '{flag}' ]; then sleep 5; fi; true\n"
+                       "FULL_CHECK_TIMEOUT=1\n")
+        self.start()
+        self.r.write("feature.txt", "v1")
+        open(flag, "w").close()
+        self.assertEqual(self.stop()[0], 2)               # one slow moment
+        os.remove(flag)
+        self.assertEqual(self.stop(active=True)[0], 0, "same tree, but the timeout is re-run, not replayed")
+        self.assertEqual(self.runs(), 2)
+
+    def test_records_from_another_pack_version_are_ignored(self):
+        self.start()
+        self.r.write("feature.txt", "v1")
+        self.assertEqual(self.r.tool("check.py")[0], 0)
+        self.assertEqual(self.r.tool("check.py", "--status")[0], 0)
+        records = self.r.path(".git", "claude-guardrails", "records")
+        for name in os.listdir(records):
+            path = os.path.join(records, name)
+            with open(path) as fh:
+                rec = json.load(fh)
+            rec["pack_version"] = "0.0.0"
+            with open(path, "w") as fh:
+                json.dump(rec, fh)
+        self.assertEqual(self.r.tool("check.py", "--status")[0], 5)
+        self.assertEqual(self.stop()[0], 0)
+        self.assertEqual(self.runs(), 2, "the old-version record was ignored and the check re-ran")
+
     def test_check_py_record_is_reused_then_invalidated(self):
         self.start()
         self.r.write("feature.txt", "v1")
