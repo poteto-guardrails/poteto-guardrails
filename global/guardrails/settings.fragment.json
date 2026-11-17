@@ -1,0 +1,115 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Bash(python3 ~/.claude/guardrails/tools/check.py)",
+      "Bash(python3 ~/.claude/guardrails/tools/check.py --status)",
+      "Bash(python3 ~/.claude/guardrails/tools/verify.py *)"
+    ],
+    "deny": [
+      "Bash(*claude-guardrails*)",
+      "Edit(**/.git/**)"
+    ],
+    "ask": [
+      "Bash(git push --force*)",
+      "Bash(git push -f*)",
+      "Bash(git push * --force*)",
+      "Bash(git push * -f*)",
+      "Bash(git reset --hard*)",
+      "Bash(git clean -f*)",
+      "Bash(rm -r*)",
+      "Bash(rm -R*)",
+      "Bash(rm -f*)",
+      "Bash(rm --recursive*)",
+      "Bash(rm --force*)",
+      "Bash(find * -delete*)",
+      "Bash(git checkout -- *)",
+      "Bash(git checkout .*)",
+      "Bash(git checkout -f*)",
+      "Bash(git restore *)",
+      "Bash(git switch --discard-changes*)",
+      "Bash(git switch -f*)",
+      "Bash(git stash drop*)",
+      "Bash(git stash clear*)",
+      "Bash(git branch -D *)",
+      "Bash(git branch * -D*)",
+      "Bash(git push *)",
+      "Bash(git merge *)",
+      "Bash(git rebase *)",
+      "Bash(gh pr merge *)",
+      "Bash(glab mr merge *)",
+      "Bash(npm publish*)",
+      "Bash(pnpm publish*)",
+      "Bash(yarn publish*)",
+      "Bash(twine upload*)",
+      "Bash(cargo publish*)",
+      "Edit(~/.claude/CLAUDE.md)",
+      "Edit(~/.claude/settings*.json)",
+      "Edit(~/.claude/guardrails.env)",
+      "Edit(~/.claude/guardrails/**)",
+      "Edit(~/.claude/skills/**)",
+      "Edit(**/CLAUDE.md)",
+      "Edit(**/.claude/settings*.json)",
+      "Edit(**/.claude/guardrails.env)",
+      "Edit(**/.claude/hooks/**)",
+      "Edit(**/.claude/rules/**)",
+      "Edit(**/.claude/skills/**)",
+      "Edit(**/.claude/agents/**)",
+      "Edit(**/.claude/commands/**)",
+      "Edit(**/.github/**)",
+      "Edit(**/.gitlab-ci.yml)",
+      "Edit(**/.pre-commit-config.yaml)",
+      "Edit(**/.husky/**)",
+      "Edit(**/.eslintrc*)",
+      "Edit(**/eslint.config.*)",
+      "Edit(**/.prettierrc*)",
+      "Edit(**/tsconfig*.json)",
+      "Edit(**/.dependency-cruiser*)",
+      "Edit(**/biome.json*)",
+      "Edit(**/ruff.toml)",
+      "Edit(**/.ruff.toml)",
+      "Edit(**/mypy.ini)",
+      "Edit(**/pyproject.toml)",
+      "Edit(**/setup.cfg)",
+      "Edit(**/.golangci.y*ml)",
+      "Edit(**/clippy.toml)"
+    ]
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          { "type": "command", "command": "python3 \"$HOME/.claude/guardrails/hooks/session_start.py\"", "timeout": 30 }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$HOME/.claude/guardrails/hooks/block_suppressions.py\"",
+            "timeout": 10,
+            "onFailure": "block"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit|NotebookEdit",
+        "hooks": [
+          { "type": "command", "command": "python3 \"$HOME/.claude/guardrails/hooks/post_edit_check.py\"", "timeout": 120 }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          { "type": "command", "command": "python3 \"$HOME/.claude/guardrails/hooks/stop_gate.py\"", "timeout": 900 }
+        ]
+      }
+    ]
+  }
+}
