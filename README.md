@@ -4,6 +4,8 @@
 
 This is a drop-in pack of hooks, permission rules, small tools and a short rulebook. It makes Claude Code work in a repository the way an experienced engineer does. It won't add lint or test suppressions, it can't finish a turn without passing your full check, it asks before touching your CI or lint config, and it keeps evidence for every claim that something works.
 
+It comes in two variants, kept in separate folders. [`local/`](local/) installs into one repository and is shared with everyone who clones it. [`global/`](global/) installs once into `~/.claude/` and covers every project on your machine. See [Install](#install) to choose.
+
 This repository also holds the pack's complete history, from a page of Markdown advice (v1) to a tested, fail-closed enforcement layer (v4.1.2). There is one commit and one tag per release, so you can see how each idea changed under review.
 
 ---
@@ -39,7 +41,7 @@ The written part is deliberately small. `CLAUDE.md` (about 500 words) covers onl
 
 This pack covers **mechanisms**. A repository counts as enforced only once they're configured and smoke-tested. Out of the box, the suppression guard and the permission rules work immediately. The per-edit check, the full-check gate and runtime verification wait for you to set `FAST_CHECK_CMD`, `FULL_CHECK_CMD` and `DRIVER_CMD` in `.claude/guardrails.env`. Until you do, Claude is told at every session start that those checks don't exist.
 
-Shell commands (`sed`, `tee`, scripts) aren't covered by the edit hooks. The full-check gate still sees the result, but a suppression added from the shell gets through. Local records protect against accidents, not against a determined adversary. **CI and server-side branch protection remain the final authority on what merges.** The pack has known limitations and open questions; both are written up in full in [`claude-code-engineering-rules/README.md`](claude-code-engineering-rules/README.md).
+Shell commands (`sed`, `tee`, scripts) aren't covered by the edit hooks. The full-check gate still sees the result, but a suppression added from the shell gets through. Local records protect against accidents, not against a determined adversary. **CI and server-side branch protection remain the final authority on what merges.** The pack has known limitations and open questions; both are written up in full in [`local/README.md`](local/README.md).
 
 ---
 
@@ -74,37 +76,98 @@ Each release is a tagged commit. Check out a tag, or diff two of them, to see ex
 
 | Tag | Theme | What changed |
 |---|---|---|
-| [`v1`](../../tree/v1) | **Advice** | `CLAUDE.md` plus seven topic rule files that turn the talk into written guidance. Nothing is enforced. |
-| [`v2`](../../tree/v2) | **Sharper advice** | Rewritten around the talk's core loop and the "inverted pyramid": directory structure as a control mechanism, feature maps and drivers, and sequencing before scaling. Still only Markdown. |
-| [`v3`](../../tree/v3) | **Enforcement** | Adversarial review of v2 against the talk transcript. The pack now follows its own ranking: hooks and permissions do the enforcing, and the Markdown shrinks to about a fifth of v2 and merges with the Karpathy guidelines. `bans.md` arrives, along with the `verify-feature` and `add-guardrail` skills. |
-| [`v4`](../../tree/v4) | **Hardening** | The edit guard fails closed and catches focused tests. Verification records with provenance (`check.py`), an executable driver contract (`verify.py`), per-session state, a fingerprint that includes HEAD, 36 mutation-tested tests, and a live smoke test as the release gate. |
-| [`v4.1`](../../tree/v4.1) | **Targeted hardening** | Baselines survive compaction; evidence path traversal and symlink escapes are rejected; each run gets its own evidence directory; failed results are reused. |
-| [`v4.1.1`](../../tree/v4.1.1) | **Fix: stale failures** | Replayed failures are labelled `SAVED result` and point to a fresh `check.py` run. Timeouts are never replayed. Records are bound to the pack version. |
-| [`v4.1.2`](../../tree/v4.1.2) | **Fix: replay scope** | Saved failures are replayed only within their own stop chain, and the replay message no longer pushes for code changes. 48 tests. Code freeze pending the live smoke run. |
+| [`v1`](https://github.com/poteto-guardrails/poteto-guardrails/tree/v1) | **Advice** | `CLAUDE.md` plus seven topic rule files that turn the talk into written guidance. Nothing is enforced. |
+| [`v2`](https://github.com/poteto-guardrails/poteto-guardrails/tree/v2) | **Sharper advice** | Rewritten around the talk's core loop and the "inverted pyramid": directory structure as a control mechanism, feature maps and drivers, and sequencing before scaling. Still only Markdown. |
+| [`v3`](https://github.com/poteto-guardrails/poteto-guardrails/tree/v3) | **Enforcement** | Adversarial review of v2 against the talk transcript. The pack now follows its own ranking: hooks and permissions do the enforcing, and the Markdown shrinks to about a fifth of v2 and merges with the Karpathy guidelines. `bans.md` arrives, along with the `verify-feature` and `add-guardrail` skills. |
+| [`v4`](https://github.com/poteto-guardrails/poteto-guardrails/tree/v4) | **Hardening** | The edit guard fails closed and catches focused tests. Verification records with provenance (`check.py`), an executable driver contract (`verify.py`), per-session state, a fingerprint that includes HEAD, 36 mutation-tested tests, and a live smoke test as the release gate. |
+| [`v4.1`](https://github.com/poteto-guardrails/poteto-guardrails/tree/v4.1) | **Targeted hardening** | Baselines survive compaction; evidence path traversal and symlink escapes are rejected; each run gets its own evidence directory; failed results are reused. |
+| [`v4.1.1`](https://github.com/poteto-guardrails/poteto-guardrails/tree/v4.1.1) | **Fix: stale failures** | Replayed failures are labelled `SAVED result` and point to a fresh `check.py` run. Timeouts are never replayed. Records are bound to the pack version. |
+| [`v4.1.2`](https://github.com/poteto-guardrails/poteto-guardrails/tree/v4.1.2) | **Fix: replay scope** | Saved failures are replayed only within their own stop chain, and the replay message no longer pushes for code changes. 48 tests. Code freeze pending the live smoke run. |
+| `4.1.2-global.1` | **Global variant** | v4.1.2 ported to a user-wide install in [`global/`](global/): layered config, destructive commands that ask instead of being denied, a Claude Code version warning, an excluded-path warning, and 53 tests. The per-project pack moves to [`local/`](local/). |
 
-The last commit adds the operator script for that live smoke run: [`smoke-test/SMOKE-RUN-v4.1.2.md`](claude-code-engineering-rules/smoke-test/SMOKE-RUN-v4.1.2.md).
+The operator script for the live smoke run is [`local/smoke-test/SMOKE-RUN-v4.1.2.md`](local/smoke-test/SMOKE-RUN-v4.1.2.md).
 
 > **Status:** v4.1.2 has passed its unit and mutation tests and a simulated smoke sequence. The live smoke test on an authenticated Claude Code install (S0 to S12) is still outstanding, so treat the pack as release-candidate quality until it's done.
 
 ---
 
-## Quick start
+## Install
 
-Requirements: Claude Code **2.1.295 or later** (for `onFailure` on hooks), `python3` on PATH, and git.
+**Repository:** https://github.com/poteto-guardrails/poteto-guardrails
+
+The pack comes in two variants, kept separate in their own folders. **Pick one per machine.** If a repository has the local pack while the global variant is installed, both sets of hooks run.
+
+| | [`local/`](local/): per project | [`global/`](global/): every project |
+|---|---|---|
+| Installs into | `<repo>/CLAUDE.md` and `<repo>/.claude/` | `~/.claude/` (CLAUDE.md, settings, skills, `guardrails/`) |
+| Applies to | That one repository, for everyone who clones it | Every project you open in Claude Code on this machine |
+| Config | `<repo>/.claude/guardrails.env` | `~/.claude/guardrails.env`, overridden key by key by `<repo>/.claude/guardrails.env` |
+| Work-destroying git and `rm` commands | Denied | Ask every time. Claude hands you the command unless you explicitly asked for it |
+| Version | `4.1.2` (48 tests) | `4.1.2-global.1` (53 tests) |
+| Best for | Teams, and committing the rules alongside the code | Your own machine, the same standards everywhere |
+
+Requirements for both: Claude Code **2.1.295 or later** (for `onFailure` on hooks), `python3` on PATH, and git.
+
+### Ask Claude to install it
+
+Open Claude Code and paste the prompt for the variant you want. Claude clones the repository, runs the tests, installs without overwriting anything you have, and shows you every merge before saving it. Claude Code's permission prompts also let you approve each write to `CLAUDE.md` or `.claude/`.
+
+**Local (per project).** Run this from the root of the repository you want to protect:
+
+```text
+Install the local (per-project) variant of the Claude Code engineering rules from
+https://github.com/poteto-guardrails/poteto-guardrails
+into this project.
+
+1. Clone it to a temporary folder and run
+   python3 local/.claude/tests/test_guardrails.py
+   Stop if it doesn't end with OK.
+2. Copy CLAUDE.md, .claude/ and docs/ from local/ into this repository's root,
+   skipping .claude/tests. Never overwrite an existing file. If CLAUDE.md or
+   .claude/settings.json already exists, merge the new content in and show me the merge.
+3. Add .claude/verification-runs/ and __pycache__/ to .gitignore if they're missing.
+4. Look at how this project lints, type-checks, tests and builds (package.json,
+   pyproject.toml, Makefile, CI workflows). Propose FAST_CHECK_CMD and
+   FULL_CHECK_CMD for .claude/guardrails.env, but don't set them until I approve.
+5. Tell me to run /hooks to confirm the hooks loaded.
+```
+
+**Global (every project).** Run this from anywhere:
+
+```text
+Install the global variant of the Claude Code engineering rules from
+https://github.com/poteto-guardrails/poteto-guardrails
+
+1. Clone it to a temporary folder and run
+   python3 global/guardrails/tests/test_guardrails.py
+   Stop if it doesn't end with OK.
+2. Copy global/guardrails/ to ~/.claude/guardrails/ and global/skills/* to
+   ~/.claude/skills/. Don't overwrite existing files without showing me the diff.
+3. Copy global/guardrails.env to ~/.claude/guardrails.env if it doesn't exist.
+4. Merge global/guardrails/settings.fragment.json into ~/.claude/settings.json:
+   add its permissions and hooks to mine, keep everything I already have,
+   and show me the merged file before saving.
+5. Merge global/CLAUDE.md into ~/.claude/CLAUDE.md and show me the result.
+6. Run python3 ~/.claude/guardrails/tests/test_guardrails.py and quote the last line.
+7. Tell me to restart Claude Code and run /hooks to confirm the hooks loaded.
+```
+
+After a global install, Claude offers to set up each repository's check commands the first time you work in it.
+
+### Install by hand
+
+**Local:**
 
 ```bash
-git clone <this-repo> && cd <this-repo>/claude-code-engineering-rules
+git clone https://github.com/poteto-guardrails/poteto-guardrails.git
+PACK="$PWD/poteto-guardrails/local"
 
-# 1. Prove the pack works on your machine
-python3 .claude/tests/test_guardrails.py          # expect: Ran 48 tests ... OK
+python3 "$PACK/.claude/tests/test_guardrails.py"           # expect: Ran 48 tests ... OK
+bash "$PACK/smoke-test/setup_smoke_repo.sh" /tmp/guardrail-smoke   # optional rehearsal; see smoke-test/SMOKE-TEST.md
 
-# 2. Rehearse in a throwaway repo (about 20 minutes)
-bash smoke-test/setup_smoke_repo.sh /tmp/guardrail-smoke
-#    then follow smoke-test/SMOKE-TEST.md
-
-# 3. Install into your repository (cp -n never overwrites existing files)
 cd /path/to/your/repo
-cp -rn /path/to/pack/{CLAUDE.md,.claude,docs} .
+cp -rn "$PACK"/{CLAUDE.md,.claude,docs} .                # cp -n never overwrites existing files
+rm -r .claude/tests                                      # optional: the tests are for the pack, not your repo
 ```
 
 Then fill in `.claude/guardrails.env`:
@@ -112,32 +175,45 @@ Then fill in `.claude/guardrails.env`:
 ```ini
 FAST_CHECK_CMD=npx eslint --max-warnings=0 {file}
 FULL_CHECK_CMD=npm run lint && npx tsc --noEmit && npm test
-DRIVER_CMD=python3 examples/driver_stub.py
+# Optional runtime verification; copy examples/driver_stub.py from the pack as a starting point
+DRIVER_CMD=
 ```
 
-Replace the example rows in `.claude/rules/bans.md` and `docs/feature-map.md` with your own, then run `/hooks` in Claude Code to confirm everything loaded. The [pack README](claude-code-engineering-rules/README.md) covers merging with an existing `CLAUDE.md` or `settings.json`, the `.gitignore` entries, and Windows notes.
+Replace the example rows in `.claude/rules/bans.md` and `docs/feature-map.md` with your own, then run `/hooks` in Claude Code to confirm everything loaded. The [local pack README](local/README.md) covers merging with an existing `CLAUDE.md` or `settings.json`, the `.gitignore` entries, and Windows notes.
+
+**Global:** follow the step-by-step guide in [`global/README.md`](global/README.md#by-hand). It covers the copy commands, merging `settings.fragment.json` and `CLAUDE.md`, per-repo setup, the global smoke test, and uninstalling.
+
+### Updating
+
+Pull the repository and re-run the install prompt or the copy step. Each release of the local pack is a tag, so you can pin a version with `git checkout v4.1.2`.
 
 ## Repository layout
 
 ```
 .
-├── README.md                          ← you are here
-└── claude-code-engineering-rules/     ← the pack, as it stands at the latest tag
-    ├── CLAUDE.md                      judgment rules + final-report format
-    ├── .claude/
-    │   ├── settings.json              hooks + permission deny/ask rules
-    │   ├── guardrails.env             human-owned check commands
-    │   ├── hooks/                     session_start, block_suppressions, post_edit_check, stop_gate
-    │   ├── tools/                     check.py (recorded full check), verify.py (driver contract)
-    │   ├── skills/                    verify-feature, add-guardrail
-    │   ├── rules/bans.md              banned patterns, each tied to its enforcing check
-    │   └── tests/                     the pack's own test suite
-    ├── docs/feature-map.md            feature + scenario IDs for runtime verification
-    ├── examples/                      ESLint, dependency-cruiser and ruff bans; reference driver
-    └── smoke-test/                    disposable-repo builder + live release checklist
+├── README.md                     ← you are here
+├── local/                        ← per-project variant (v4.1.2): copy into a repository's root
+│   ├── CLAUDE.md                 judgment rules + final-report format
+│   ├── .claude/
+│   │   ├── settings.json         hooks + permission deny/ask rules
+│   │   ├── guardrails.env        human-owned check commands
+│   │   ├── hooks/                session_start, block_suppressions, post_edit_check, stop_gate
+│   │   ├── tools/                check.py (recorded full check), verify.py (driver contract)
+│   │   ├── skills/               verify-feature, add-guardrail
+│   │   ├── rules/bans.md         banned patterns, each tied to its enforcing check
+│   │   └── tests/                the pack's own test suite (48 tests)
+│   ├── docs/feature-map.md       feature + scenario IDs for runtime verification
+│   ├── examples/                 ESLint, dependency-cruiser and ruff bans; reference driver
+│   └── smoke-test/               disposable-repo builder + live release checklist
+└── global/                       ← user-wide variant (4.1.2-global.1): mirrors ~/.claude/
+    ├── README.md                 what's different, install, verify, uninstall
+    ├── CLAUDE.md                 → ~/.claude/CLAUDE.md
+    ├── guardrails.env            → ~/.claude/guardrails.env (global defaults)
+    ├── skills/                   → ~/.claude/skills/
+    └── guardrails/               → ~/.claude/guardrails/ (hooks, tools, templates, tests, settings.fragment.json)
 ```
 
-The pack sits in a subfolder on purpose. Its `.claude/` directory only takes effect once you copy it to the root of a repository, so browsing or contributing here won't switch the hooks on.
+Both variants sit in subfolders on purpose. Neither `.claude/` takes effect until you install it, so browsing or contributing here won't switch any hooks on.
 
 ## Credits
 
