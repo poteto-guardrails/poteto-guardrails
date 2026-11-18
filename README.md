@@ -84,6 +84,7 @@ Each release is a tagged commit. Check out a tag, or diff two of them, to see ex
 | [`v4.1.1`](https://github.com/poteto-guardrails/poteto-guardrails/tree/v4.1.1) | **Fix: stale failures** | Replayed failures are labelled `SAVED result` and point to a fresh `check.py` run. Timeouts are never replayed. Records are bound to the pack version. |
 | [`v4.1.2`](https://github.com/poteto-guardrails/poteto-guardrails/tree/v4.1.2) | **Fix: replay scope** | Saved failures are replayed only within their own stop chain, and the replay message no longer pushes for code changes. 48 tests. Code freeze pending the live smoke run. |
 | `4.1.2-global.1` | **Global variant** | v4.1.2 ported to a user-wide install in [`global/`](global/): layered config, destructive commands that ask instead of being denied, a Claude Code version warning, an excluded-path warning, and 53 tests. The per-project pack moves to [`local/`](local/). |
+| `4.1.2-global.1+setup-checks.1` | **Optional extra: `/setup-checks`** | An add-on for the global variant in [`extras/setup-checks/`](extras/setup-checks/). Agents recommend setting up linting, formatting, type-checks and tests when a project lacks them, and do it for you after a yes. Adds testing and pre-flight rules, fixes a bug where `FULL_CHECK_CMD= # note` counted as a passing check, and grows the suite to 59 tests. Refined over several external review rounds. |
 
 The operator script for the live smoke run is [`local/smoke-test/SMOKE-RUN-v4.1.2.md`](local/smoke-test/SMOKE-RUN-v4.1.2.md).
 
@@ -154,6 +155,26 @@ https://github.com/poteto-guardrails/poteto-guardrails
 
 After a global install, Claude offers to set up each repository's check commands the first time you work in it.
 
+### Optional extra: `/setup-checks` (global variant only)
+
+The base pack enforces checks, but only once a project has them. If you're not sure how to set up linting and tests yourself, add the **[`/setup-checks` extra](extras/setup-checks/)** on top of the global install. Your agent then:
+
+- **notices** when a project has no linter, formatter, type-checker or tests, and recommends fixing that in a line or two;
+- **explains** in plain words what's missing, shows a health card and lists every file it would touch;
+- **sets it up after your yes**: the standard tools for the project's stack, a single `check` command, a few real first tests, and the guardrails wiring;
+- **writes a test** for every bug fix and observable behaviour change from then on, and flags check failures that were already there before it started.
+
+It also includes a hook bug fix that's worth having on its own. To install it, paste this into Claude Code:
+
+```text
+Install the optional /setup-checks extra from
+https://github.com/poteto-guardrails/poteto-guardrails
+by following the "Ask Claude" prompt in extras/setup-checks/README.md.
+The global variant is already installed. Show me each change before saving it.
+```
+
+The [extra's README](extras/setup-checks/README.md) has the full prompt, by-hand `patch` commands, things to try on throwaway projects, and how to remove it.
+
 ### Install by hand
 
 **Local:**
@@ -211,6 +232,12 @@ Pull the repository and re-run the install prompt or the copy step. Each release
     ├── guardrails.env            → ~/.claude/guardrails.env (global defaults)
     ├── skills/                   → ~/.claude/skills/
     └── guardrails/               → ~/.claude/guardrails/ (hooks, tools, templates, tests, settings.fragment.json)
+└── extras/
+    └── setup-checks/             ← optional add-on for the global variant (+setup-checks.1)
+        ├── README.md             what it does, install (prompt or patch), try it, remove it
+        ├── skills/setup-checks/  → ~/.claude/skills/setup-checks/
+        ├── CLAUDE.md.patch       testing, pre-flight and recommendation rules for ~/.claude/CLAUDE.md
+        └── guardrails.patch      hook bug fix, setup nudge, version bump and 6 tests for ~/.claude/guardrails/
 ```
 
 Both variants sit in subfolders on purpose. Neither `.claude/` takes effect until you install it, so browsing or contributing here won't switch any hooks on.

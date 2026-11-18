@@ -121,6 +121,10 @@ The smoke test is adapted for the global install. S9 expects force-push to **ask
 
 All the local pack's [known limitations](../local/README.md#known-limitations) still apply.
 
+## Optional extra: `/setup-checks`
+
+Out of the box, this variant only *enforces* checks a project already has, and Claude only offers to wire up tools that already exist. If you'd like your agent to recommend and set up linting, formatting, type-checks and tests where they're missing, add the **[`/setup-checks` extra](../extras/setup-checks/)**. It also writes tests with behaviour changes, flags check failures that were already there, and fixes a bug where `FULL_CHECK_CMD= # note` counted as a passing check. It installs as one skill and two patches on top of this folder, and reports version `4.1.2-global.1+setup-checks.1`.
+
 ## Uninstall
 
 1. Remove the `hooks` entries and the guardrail permission rules from `~/.claude/settings.json`. They're listed in `~/.claude/guardrails/settings.fragment.json`.

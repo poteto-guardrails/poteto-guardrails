@@ -1,0 +1,35 @@
+--- a/CLAUDE.md
++++ b/CLAUDE.md
+@@ -6,7 +6,8 @@
+ - State your assumptions. If the request has more than one reasonable reading, name them and ask. Don't pick one silently.
+ - If no one is available to answer (an unattended or scheduled run), take the most conservative reading, write it down under **Assumptions**, and avoid anything that can't be undone.
+ - For multi-step work, write a short plan where each step has its own check: `1. <step> → verify: <command or observation>`.
+-- Bug fix: first write a test that reproduces the bug and fails, then make it pass.
++- Tests: for a bug fix, or a change to behaviour someone could observe, write the test first and see it fail, then make it pass (if the project has a test runner). That test is part of the change, not extra scope. Don't add tests for docs, config, behaviour-neutral refactors or code you didn't touch. Test behaviour, not implementation; never write a test that can't fail. No test runner: say so and recommend `/setup-checks`, unless `.claude/guardrails.env` says tests were left out on purpose.
++- Pre-flight: before your first edit, if `FULL_CHECK_CMD` is set and you don't know whether the tree passes, run `python3 ~/.claude/guardrails/tools/check.py`. If it fails, recommend fixing those failures first: until then, every turn that changes files ends NOT verified. If the user goes ahead, leave those failures alone, but failures your change causes are yours to fix. Never weaken or bypass the gate. In the final report, separate the old failures (still there or gone) from new ones, and say where you can't tell.
+ 
+ ## Writing code
+ - Write the least code that solves the request. No unrequested features, configurability, single-use abstractions or handling for impossible cases.
+@@ -16,7 +17,7 @@
+ - Don't write a comment that justifies a shortcut. If the right fix is out of reach, stop and report it.
+ 
+ ## Guardrails belong to humans
+-- Don't edit lint, type-check, CI, hook or settings configuration (including `guardrails.env` and anything under `~/.claude/guardrails/`). Edits there require approval for a reason.
++- Don't edit lint, type-check, CI, hook or settings configuration (including `guardrails.env` and anything under `~/.claude/guardrails/`). Edits there require approval for a reason. Exception: in `/setup-checks`, the files the user approved there, and only those.
+ - If a check seems wrong, or you can't pass it without a suppression, stop and explain under **Not passing**.
+ - If you see a mistake that a check could have caught (yours or the codebase's), propose the check under **Guardrail candidates**. Don't build it unless asked; humans use `/add-guardrail` for that.
+ 
+@@ -26,10 +27,9 @@
+ - Merge, deploy or publish only when the user explicitly asks for it in the current request. Never as a step you decided on yourself.
+ 
+ ## Project checks
+-- In a git repository, read the session start message. If it lists `FULL_CHECK_CMD` or `FAST_CHECK_CMD` under NOT CONFIGURED, offer once per session to set them up. Make the offer in one or two lines at the start of your first reply, then fully answer or do what was asked in that same reply. The offer never replaces the answer, and you don't wait for a reply to it. Don't offer if the repo's `.claude/guardrails.env` already exists and deliberately leaves a check empty.
+-- Before offering, look at what the project already uses: `package.json` scripts, `pyproject.toml`, `Makefile`, `Cargo.toml`, `go.mod`, CI workflows. Propose concrete commands (full check: lint, type-check, tests, build; fast check: lint plus format check on one `{file}`). Never invent tools the project doesn't have.
+-- If the user accepts, create `<repo>/.claude/guardrails.env` from `~/.claude/guardrails/templates/guardrails.env` with only the keys you're setting. Then run `python3 ~/.claude/guardrails/tools/check.py` and report its result. If it fails on existing code, report that rather than weakening the command.
+-- Unattended runs: don't set anything up. Note the missing checks under **Not passing / not run**.
++- When asked to change code in a git repository, read the session start message. If it lists `FAST_CHECK_CMD` or `FULL_CHECK_CMD` as NOT CONFIGURED, recommend `/setup-checks` once per session: one or two plain lines on what's missing and why it matters, then do the task without waiting for a reply. Leave out any check the repo's `.claude/guardrails.env` deliberately leaves empty (read the file; the session start message can't tell), but still mention the others. Don't recommend it for questions or docs-only work.
++- When the user agrees or runs `/setup-checks`, follow that skill. Its standard tools are in scope; other tools, or replacing ones the project uses, aren't. If the user declines for good, offer to record that in `.claude/guardrails.env`.
++- Unattended runs: don't set anything up. Put the missing checks under **Not passing / not run**.
+ 
+ ## Verifying
+ - Before your final report, run `python3 ~/.claude/guardrails/tools/check.py` and quote its last line. The stop gate accepts that result if nothing changed afterwards. If it prints a WARNING about excluded paths, report it.

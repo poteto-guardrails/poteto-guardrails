@@ -1,0 +1,119 @@
+--- a/hooks/_guardrails.py
++++ b/hooks/_guardrails.py
+@@ -14,7 +14,7 @@
+ import tempfile
+ import time
+ 
+-PACK_VERSION = "4.1.2-global.1"
++PACK_VERSION = "4.1.2-global.1+setup-checks.1"
+ MIN_CLAUDE_CODE = (2, 1, 295)  # onFailure: "block" support
+ 
+ 
+@@ -48,7 +48,13 @@
+             if not line or line.startswith("#") or "=" not in line:
+                 continue
+             key, _, value = line.partition("=")
+-            cfg[key.strip()] = value.strip()
++            key, value = key.strip(), value.strip()
++            if key.endswith("_CMD") and value.startswith("#"):
++                # "FULL_CHECK_CMD= # note" is a comment, not a command. Run by the shell it is a
++                # no-op that always passes, so the check would look verified when it isn't.
++                # (Only *_CMD keys: a SUPPRESSION_REGEX may legitimately start with '#'.)
++                value = ""
++            cfg[key] = value
+ 
+ 
+ def load_config():
+@@ -65,6 +71,13 @@
+     return cfg
+ 
+ 
++def repo_config():
++    """Only the keys set in <repo>/.claude/guardrails.env, without the global layer."""
++    cfg = {}
++    _parse_env(repo_env_path(), cfg)
++    return cfg
++
++
+ def int_setting(cfg, key, default):
+     try:
+         return int(cfg.get(key) or default)
+--- a/hooks/stop_gate.py
++++ b/hooks/stop_gate.py
+@@ -40,7 +40,10 @@
+ 
+     if not cmd:
+         if changed and fp is not None:
+-            warn_user("Guardrails: files changed but FULL_CHECK_CMD isn't configured. This work is unverified.")
++            # A repo file that sets the key (even to empty) is a deliberate choice: no nudge then.
++            hint = "" if "FULL_CHECK_CMD" in g.repo_config() else " Run /setup-checks to set it up."
++            warn_user("Guardrails: files changed but FULL_CHECK_CMD isn't configured."
++                      " This work is unverified." + hint)
+         sys.exit(0)
+     if not changed:
+         sys.exit(0)
+--- a/tests/test_guardrails.py
++++ b/tests/test_guardrails.py
+@@ -680,5 +680,62 @@
+         self.assertTrue(out.rstrip().splitlines()[-1].startswith("FULL CHECK: PASS"))
+ 
+ 
++class SetupChecksHookFixes(unittest.TestCase):
++    """Hook fixes that came with /setup-checks: comment-only *_CMD values, and the setup hint."""
++
++    def setUp(self):
++        self.r = Repo("")  # repo guardrails.env exists but sets no keys
++
++    def tearDown(self):
++        self.r.cleanup()
++
++    def change_and_stop(self, sid):
++        self.r.hook("session_start.py", {"session_id": sid, "source": "startup"})
++        self.r.write("src/app.py", "y = 2\n")
++        code, out, err = self.r.hook("stop_gate.py", {"hook_event_name": "Stop", "session_id": sid,
++                                                      "stop_hook_active": False})
++        return code, out + err
++
++    def test_comment_only_cmd_is_not_a_passing_check(self):
++        # "FULL_CHECK_CMD= # note" used to run "# note" as a no-op that exits 0: a silent pass.
++        self.r.set_env("FULL_CHECK_CMD= # left empty: existing failures\n")
++        code, out = self.change_and_stop("c1")
++        self.assertEqual(code, 0)
++        self.assertIn("isn't configured", out)
++        _, start, _ = self.r.hook("session_start.py", {"session_id": "c1b"})
++        self.assertIn("NOT CONFIGURED: FAST_CHECK_CMD, FULL_CHECK_CMD", start)
++
++    def test_real_command_with_trailing_comment_still_runs(self):
++        self.r.set_env("FULL_CHECK_CMD=false # always fails\n")
++        code, out = self.change_and_stop("c2")
++        self.assertEqual(code, 2)
++        self.assertIn("full check failed", out)
++
++    def test_suppression_regex_starting_with_hash_is_kept(self):
++        # Only *_CMD keys are affected: a custom SUPPRESSION_REGEX may legitimately start with '#'.
++        self.r.set_env("SUPPRESSION_REGEX=#\\s*custom-ignore\n")
++        f = self.r.write("src/app.py", "x = 1\n")
++        code, _, err = self.r.hook("block_suppressions.py", edit(f, "x = 1", "x = 1  # custom-ignore"))
++        self.assertEqual(code, 2)
++        self.assertIn("custom-ignore", err)
++
++    def test_unset_full_check_points_to_setup_checks(self):
++        _, out = self.change_and_stop("c4")
++        self.assertIn("isn't configured", out)
++        self.assertIn("/setup-checks", out)
++
++    def test_deliberately_empty_full_check_is_not_nagged(self):
++        self.r.set_env("# Declined setup\nFULL_CHECK_CMD=\n")
++        _, out = self.change_and_stop("c5")
++        self.assertIn("isn't configured", out)
++        self.assertNotIn("/setup-checks", out)
++
++    def test_configured_passing_check_stays_silent(self):
++        self.r.set_env("FULL_CHECK_CMD=true\n")
++        code, out = self.change_and_stop("c6")
++        self.assertEqual(code, 0)
++        self.assertEqual(out.strip(), "")
++
++
+ if __name__ == "__main__":
+     unittest.main(verbosity=2)
