@@ -91,7 +91,7 @@ If the project uses Biome, it is the linter and formatter; don't add ESLint or P
 Then present the plan:
 
 - what will be added, with one sentence each on what it does for them;
-- every file that will be created or changed. Mark the ones that will trigger an approval prompt; the `ask` rules in `~/.claude/settings.json` say which (typically lint, format, type-check and CI config, and `.claude/**`). Tell the user: "If a prompt appears for a file that isn't on this list, something unplanned is happening. Answer no.";
+- every file that will be created or changed. Mark the ones that will trigger an approval prompt; the `ask` rules in `~/.claude/settings.json` say which (typically lint, format, type-check and CI config, and `.claude/**`). Tell the user: "If a prompt appears for a file that isn't on this list, something unplanned is happening. Answer no. Package installs and other shell commands change files without a prompt, so the final report also checks every change against this list.";
 - the dev dependencies that will be installed (dev only; nothing ships with the app);
 - the fast check that will run after each edit (a few seconds), and the full check that will run before a turn can finish;
 - what this yes doesn't cover: changing existing code. That's a separate question after setup (step 5);
@@ -160,6 +160,7 @@ Create or update `.claude/guardrails.env` from `~/.claude/guardrails/templates/g
 
 ## 7. Report
 
+- Run `git status --porcelain` and compare every changed or new file with the plan's list. Name any file that wasn't on the list and ask the user whether to keep it. Don't revert anything yourself.
 - The health card again, now showing what's ✓ and what's "not needed".
 - What was added, and the one command the user can run themselves (for example `npm run check`, or `python3 ~/.claude/guardrails/tools/check.py`).
 - What happens automatically from now on: the fast check after every edit, the full check before a turn can finish (if wired), and a test for every behaviour change.

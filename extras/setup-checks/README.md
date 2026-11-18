@@ -10,7 +10,7 @@ The base guardrails *enforce* checks, but only once a project has them. On a pro
 |---|---|---|
 | **The `/setup-checks` skill** | `skills/setup-checks/SKILL.md` | A guided pre-flight. **Survey** the project without changing anything. Show a plain-English **health card** (linter, formatter, type-check, tests, CI, guardrails). **Recommend** only what's missing, from each stack's standard tools, and list every file it would touch. **Wait for your yes**, then install the tools, add a `check` command, write a few real first tests, and wire up `.claude/guardrails.env`. Changing existing code and changing CI each need their own separate yes |
 | **Rule changes** | `CLAUDE.md.patch` | **Tests:** a bug fix or an observable behaviour change gets a test written first, if the project has a test runner. **Pre-flight:** before the first edit, run the full check and flag failures that were already there, keeping them separate from new ones. **Recommendation:** suggest `/setup-checks` once per session when a project lacks checks, but only during real code changes, never for questions |
-| **Hook fixes and tests** | `guardrails.patch` | **Bug fix (recommended for everyone):** `FULL_CHECK_CMD= # note` used to count as a *passing* check, because the shell ran the comment as a no-op. Any `*_CMD` value starting with `#` is now treated as empty. **Nudge:** the "FULL_CHECK_CMD isn't configured" warning adds "Run /setup-checks to set it up", except in repos that deliberately left it empty. **Tests:** 6 new tests, so the suite goes from 53 to 59. **Version:** reports `4.1.2-global.1+setup-checks.1` at session start, so you can tell the extra is installed. Saved verification records from before are ignored once, and checks run fresh |
+| **Hook fixes and tests** | `guardrails.patch` | **Bug fix (recommended for everyone):** `FULL_CHECK_CMD= # note` used to count as a *passing* check, because the shell ran the comment as a no-op. Any `*_CMD` value starting with `#` is now treated as empty. **Nudge:** the "FULL_CHECK_CMD isn't configured" warning adds "Run /setup-checks to set it up", except in repos that deliberately left it empty. **Tests:** 6 new tests, so the suite goes from 53 to 59. **Version:** reports `4.1.2-global.1+setup-checks.2` at session start, so you can tell the extra is installed. Saved verification records from before are ignored once, and checks run fresh |
 
 The stack defaults it recommends (it never replaces a tool you already use):
 
@@ -122,6 +122,13 @@ rm -r ~/.claude/skills/setup-checks
 ```
 
 Or reverse just the patches: `patch -p1 -R` with the same file in the same folder.
+
+## Changes
+
+| Version | What changed |
+|---|---|
+| `+setup-checks.2` | Hands-on testing showed that package installs and other shell commands change files without an approval prompt. The plan now says so, and the final report runs `git status --porcelain`, names any changed or new file that wasn't on the plan, and asks whether to keep it. Nothing is reverted automatically. |
+| `+setup-checks.1` | First release: the skill, the `CLAUDE.md` rules, the comment-only `*_CMD` bug fix, the `/setup-checks` nudge and 6 tests. |
 
 ## Status
 

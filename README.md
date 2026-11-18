@@ -85,6 +85,7 @@ Each release is a tagged commit. Check out a tag, or diff two of them, to see ex
 | [`v4.1.2`](https://github.com/poteto-guardrails/poteto-guardrails/tree/v4.1.2) | **Fix: replay scope** | Saved failures are replayed only within their own stop chain, and the replay message no longer pushes for code changes. 48 tests. Code freeze pending the live smoke run. |
 | `4.1.2-global.1` | **Global variant** | v4.1.2 ported to a user-wide install in [`global/`](global/): layered config, destructive commands that ask instead of being denied, a Claude Code version warning, an excluded-path warning, and 53 tests. The per-project pack moves to [`local/`](local/). |
 | `4.1.2-global.1+setup-checks.1` | **Optional extra: `/setup-checks`** | An add-on for the global variant in [`extras/setup-checks/`](extras/setup-checks/). Agents recommend setting up linting, formatting, type-checks and tests when a project lacks them, and do it for you after a yes. Adds testing and pre-flight rules, fixes a bug where `FULL_CHECK_CMD= # note` counted as a passing check, and grows the suite to 59 tests. Refined over several external review rounds. |
+| `4.1.2-global.1+setup-checks.2` | **Extra: check the plan against reality** | The `/setup-checks` plan now warns that package installs and other shell commands change files without an approval prompt. The final report runs `git status`, names any changed file that wasn't in the plan, and asks whether to keep it, without reverting anything. Found in hands-on testing. |
 
 The operator script for the live smoke run is [`local/smoke-test/SMOKE-RUN-v4.1.2.md`](local/smoke-test/SMOKE-RUN-v4.1.2.md).
 
@@ -248,7 +249,7 @@ Pull the repository and re-run the install prompt or the copy step. Each release
     ├── skills/                   → ~/.claude/skills/
     └── guardrails/               → ~/.claude/guardrails/ (hooks, tools, templates, tests, settings.fragment.json)
 └── extras/
-    └── setup-checks/             ← optional add-on for the global variant (+setup-checks.1)
+    └── setup-checks/             ← optional add-on for the global variant (+setup-checks.2)
         ├── README.md             what it does, install (prompt or patch), try it, remove it
         ├── skills/setup-checks/  → ~/.claude/skills/setup-checks/
         ├── CLAUDE.md.patch       testing, pre-flight and recommendation rules for ~/.claude/CLAUDE.md

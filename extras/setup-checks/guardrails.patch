@@ -5,7 +5,7 @@
  import time
  
 -PACK_VERSION = "4.1.2-global.1"
-+PACK_VERSION = "4.1.2-global.1+setup-checks.1"
++PACK_VERSION = "4.1.2-global.1+setup-checks.2"
  MIN_CLAUDE_CODE = (2, 1, 295)  # onFailure: "block" support
  
  
