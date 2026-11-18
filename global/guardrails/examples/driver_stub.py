@@ -1,9 +1,9 @@
-"""Reference driver that implements the contract in .claude/tools/verify.py.
+"""Reference driver that implements the contract in ~/.claude/guardrails/tools/verify.py.
 
 Replace the bodies of the scenario functions with real automation (Playwright, a CLI,
 HTTP calls). Keep the contract: arguments in, result.json plus evidence out, exit 0/1/3.
 
-  DRIVER_CMD=python3 examples/driver_stub.py
+  DRIVER_CMD=python3 ~/.claude/guardrails/examples/driver_stub.py
 """
 import argparse
 import json

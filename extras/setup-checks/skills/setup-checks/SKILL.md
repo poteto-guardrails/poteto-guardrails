@@ -62,7 +62,7 @@ Today's code: type-check FAILS with 3 errors (already there before this session)
 
 Mark a row "— not needed" when the project doesn't need it (see step 3), with the reason.
 
-If every needed row is ✓ and the baseline passes, say so. Make sure the guardrails are wired (step 6), then stop.
+If every needed row is ✓ and the baseline passes, say so. If the guardrails aren't wired yet, name the files step 6 would create or change and ask before wiring them. Then stop.
 
 ## 3. Recommend (first approval)
 
@@ -142,7 +142,7 @@ New tools usually find problems in code that was already there. The yes in step 
 
 ## 6. Wire the guardrails
 
-Create or update `.claude/guardrails.env` from `~/.claude/guardrails/templates/guardrails.env`. Before the approval prompt appears, tell the user it lets Claude run these checks automatically. Do these in order. The repo's `guardrails.env` is part of the tree the stop gate checks, so `check.py` must be the last thing you do.
+Create or update `.claude/guardrails.env` from `~/.claude/guardrails/templates/guardrails.env`. Before the approval prompt appears, tell the user it lets Claude run these checks automatically. Do these in order. The repo's `guardrails.env` is part of the tree the stop gate checks, so `check.py` must be the last check you run. After it, only read-only commands (such as step 7's `git status`) are allowed.
 
 **Comments go on their own line**, above the key they explain. Never put a note after `=` (`FULL_CHECK_CMD= # reason`): the hooks take everything after `=` as the command, and the shell runs `# reason` as a no-op that always passes, so the check would look verified when it isn't. An empty check is written as `KEY=` with nothing after it.
 

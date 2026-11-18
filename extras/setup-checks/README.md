@@ -121,7 +121,7 @@ rm -r ~/.claude/guardrails && mv ~/.claude/guardrails.bak-setup-checks ~/.claude
 rm -r ~/.claude/skills/setup-checks
 ```
 
-Or reverse just the patches: `patch -p1 -R` with the same file in the same folder.
+Restoring the backups also undoes any other edits made to `~/.claude/CLAUDE.md` or `~/.claude/guardrails/` since you installed the extra. To keep those, reverse just the patches instead: `patch -p1 -R` with the same file in the same folder, then delete the skill folder.
 
 ## Changes
 

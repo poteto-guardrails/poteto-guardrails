@@ -4,7 +4,7 @@ A Claude Code setup based on Lauren Tan's talk **"All Code Is Slop (Except Mine)
 
 v4.1.2 limits saved-failure reuse to the stop chain that produced it. v4.1.1 fixed how saved failure results are reused (see CHANGELOG.md). v4.1 kept v4's architecture and closed defects found in the V4 review. It preserves session baselines across context compaction, confines evidence to unique run directories, narrows generated-artifact exclusions, and avoids rerunning an unchanged failing check.
 
-> **To the reviewer:** "What changed from v3" maps each review point to the change and its test. "Open questions" at the end is where your next round of feedback would help most.
+> **Reading this as history:** this README is the v4.1.2 release notes as written for the review round. "What changed from v3" maps each review point to the change and its test. The "Open questions" at the end show where things stood; the [global variant](../global/README.md#whats-different-from-the-local-pack) settled two of them.
 
 ---
 
@@ -134,7 +134,9 @@ The fingerprint covers HEAD's tree plus staged, unstaged and untracked content. 
 - **Notebook replace edits** are compared with the cell's current source. If the cell can't be found, the comparison is against empty, so it's stricter, never looser.
 - **The default suppression list is opinionated** (`as any`, `as unknown as`, `@pytest.mark.xfail`). Tune `SUPPRESSION_REGEX` and `SUPPRESSION_EXEMPT_GLOBS` per repo. Only Claude's edits are checked, never human ones.
 
-## Open questions for the reviewer
+## Open questions at this release
+
+The [global variant](../global/README.md#whats-different-from-the-local-pack) settled questions 2 and 3: exit 3 is reported as not run, and session start warns on Claude Code older than 2.1.295. Question 1 is unchanged: records are still accepted across sessions on the same tree.
 
 1. **Accepting records across sessions:** is content-binding sufficient, or do you see a case where a valid record for an identical tree should still be rejected?
 2. **Exit code 3 ("unsupported") in the driver contract:** should unsupported scenarios block the final report, or is "report as not run" enough?

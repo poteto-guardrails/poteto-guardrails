@@ -2,6 +2,8 @@
 
 **Guardrails that make Claude Code earn your trust instead of asking for it.**
 
+> **Please read first.** This is my own interpretation of the ideas in Lauren Tan's talk and her pstack plugin. It isn't her work, and she hasn't reviewed or endorsed it. It's still being tested: the unit tests pass, but the live smoke test on a real Claude Code session hasn't been run yet. It comes with no guarantee (see [LICENSE](LICENSE)), so try it on a throwaway project before you rely on it. Feedback is very welcome. If something breaks, reads wrong, or could be done better, please [open an issue](https://github.com/poteto-guardrails/poteto-guardrails/issues).
+
 This is a drop-in pack of hooks, permission rules, small tools and a short rulebook. It makes Claude Code work in a repository the way an experienced engineer does. It won't add lint or test suppressions, it can't finish a turn without passing your full check, it asks before touching your CI or lint config, and it keeps evidence for every claim that something works.
 
 It comes in two variants, kept in separate folders. [`local/`](local/) installs into one repository and is shared with everyone who clones it. [`global/`](global/) installs once into `~/.claude/` and covers every project on your machine. See [Install](#install) to choose.
@@ -25,6 +27,8 @@ Put simply, it's a **local enforcement layer for Claude Code**, built from Claud
 | **Runtime verification** | Claude drives a named feature scenario through your app driver. The driver has to follow a strict contract (exit code, `result.json`, evidence files that really exist). If it breaks the contract, the result counts as not verified. | `.claude/tools/verify.py` plus the `verify-feature` skill |
 | **A recurring mistake** | A human runs `/add-guardrail` to turn it into a real check (an API change, a lint rule or a test) with an error message that names the fix. | `add-guardrail` skill |
 
+The table describes the per-project pack. The global variant works the same way from `~/.claude/guardrails/`, except that work-destroying commands ask for approval instead of being denied (see [Install](#install)).
+
 The written part is deliberately small. `CLAUDE.md` (about 500 words) covers only what needs judgment: state your assumptions, write the least code that solves the problem, fix root causes, don't touch the guardrails, and end with an honest report of what changed and what was checked. `bans.md` lists the banned patterns, and **every row has to name the check that enforces it**. Prose with nothing enforcing it doesn't belong in the rulebook.
 
 ### Engineering details
@@ -34,7 +38,7 @@ The written part is deliberately small. `CLAUDE.md` (about 500 words) covers onl
 - **Per-session state.** Retry counters and baselines are kept per session and written atomically, so parallel sessions in one working tree never share retry budgets. The baseline survives context compaction, resume and clear.
 - **Evidence you can trust.** Every driver run writes to its own run directory. Evidence paths are checked: absolute paths, `..` traversal, and symlinks that point outside the run directory are all rejected. Earlier evidence is never deleted.
 - **Fails closed where that's safe, fails open where it isn't.** The edit guard blocks on any failure. The stop gate never does, because a fail-closed Stop hook with a broken Python would lock you out of your own session.
-- **Tested, including the tests.** 48 tests run in about 19 seconds. The suite was mutation-tested: each fix was removed in turn to confirm a test fails without it.
+- **Tested, including the tests.** 48 tests run in under 20 seconds. The suite was mutation-tested: each fix was removed in turn to confirm a test fails without it.
 - **Released through a gate.** `smoke-test/` builds a disposable repository and walks through 15 live scenarios (S0 to S14), each with an expected result: blocked suppressions, the stop-gate retry chain, denied force-pushes, broken-hook behaviour, and more.
 
 ### Scope
@@ -83,9 +87,9 @@ Each release is a tagged commit. Check out a tag, or diff two of them, to see ex
 | [`v4.1`](https://github.com/poteto-guardrails/poteto-guardrails/tree/v4.1) | **Targeted hardening** | Baselines survive compaction; evidence path traversal and symlink escapes are rejected; each run gets its own evidence directory; failed results are reused. |
 | [`v4.1.1`](https://github.com/poteto-guardrails/poteto-guardrails/tree/v4.1.1) | **Fix: stale failures** | Replayed failures are labelled `SAVED result` and point to a fresh `check.py` run. Timeouts are never replayed. Records are bound to the pack version. |
 | [`v4.1.2`](https://github.com/poteto-guardrails/poteto-guardrails/tree/v4.1.2) | **Fix: replay scope** | Saved failures are replayed only within their own stop chain, and the replay message no longer pushes for code changes. 48 tests. Code freeze pending the live smoke run. |
-| `4.1.2-global.1` | **Global variant** | v4.1.2 ported to a user-wide install in [`global/`](global/): layered config, destructive commands that ask instead of being denied, a Claude Code version warning, an excluded-path warning, and 53 tests. The per-project pack moves to [`local/`](local/). |
-| `4.1.2-global.1+setup-checks.1` | **Optional extra: `/setup-checks`** | An add-on for the global variant in [`extras/setup-checks/`](extras/setup-checks/). Agents recommend setting up linting, formatting, type-checks and tests when a project lacks them, and do it for you after a yes. Adds testing and pre-flight rules, fixes a bug where `FULL_CHECK_CMD= # note` counted as a passing check, and grows the suite to 59 tests. Refined over several external review rounds. |
-| `4.1.2-global.1+setup-checks.2` | **Extra: check the plan against reality** | The `/setup-checks` plan now warns that package installs and other shell commands change files without an approval prompt. The final report runs `git status`, names any changed file that wasn't in the plan, and asks whether to keep it, without reverting anything. Found in hands-on testing. |
+| [`v4.1.2-global.1`](https://github.com/poteto-guardrails/poteto-guardrails/tree/v4.1.2-global.1) | **Global variant** | v4.1.2 ported to a user-wide install in [`global/`](global/): layered config, destructive commands that ask instead of being denied, a Claude Code version warning, an excluded-path warning, and 53 tests. The per-project pack moves to [`local/`](local/). |
+| [`v4.1.2-global.1+setup-checks.1`](https://github.com/poteto-guardrails/poteto-guardrails/tree/v4.1.2-global.1%2Bsetup-checks.1) | **Optional extra: `/setup-checks`** | An add-on for the global variant in [`extras/setup-checks/`](extras/setup-checks/). Agents recommend setting up linting, formatting, type-checks and tests when a project lacks them, and do it for you after a yes. Adds testing and pre-flight rules, fixes a bug where `FULL_CHECK_CMD= # note` counted as a passing check, and grows the suite to 59 tests. Refined over several external review rounds. |
+| [`v4.1.2-global.1+setup-checks.2`](https://github.com/poteto-guardrails/poteto-guardrails/tree/v4.1.2-global.1%2Bsetup-checks.2) | **Extra: check the plan against reality** | The `/setup-checks` plan now warns that package installs and other shell commands change files without an approval prompt. The final report runs `git status`, names any changed file that wasn't in the plan, and asks whether to keep it, without reverting anything. Found in hands-on testing. |
 
 The operator script for the live smoke run is [`local/smoke-test/SMOKE-RUN-v4.1.2.md`](local/smoke-test/SMOKE-RUN-v4.1.2.md).
 
@@ -175,10 +179,10 @@ If you're unsure which group you're in, install the extra. It only recommends, e
 
 Add the **[`/setup-checks` extra](extras/setup-checks/)** on top of the global install, and your agent will:
 
-- **notices** when a project has no linter, formatter, type-checker or tests, and recommends fixing that in a line or two;
-- **explains** in plain words what's missing, shows a health card and lists every file it would touch;
-- **sets it up after your yes**: the standard tools for the project's stack, a single `check` command, a few real first tests, and the guardrails wiring;
-- **writes a test** for every bug fix and observable behaviour change from then on, and flags check failures that were already there before it started.
+- **notice** when a project has no linter, formatter, type-checker or tests, and recommend fixing that in a line or two;
+- **explain** in plain words what's missing, show a health card and list every file it would touch;
+- **set it up after your yes**: the standard tools for the project's stack, a single `check` command, a few real first tests, and the guardrails wiring;
+- **write a test** for every bug fix and observable behaviour change from then on, and flag check failures that were already there before it started.
 
 It also includes a hook bug fix that's worth having on its own. To install it, paste this into Claude Code:
 
@@ -222,7 +226,7 @@ Replace the example rows in `.claude/rules/bans.md` and `docs/feature-map.md` wi
 
 ### Updating
 
-Pull the repository and re-run the install prompt or the copy step. Each release of the local pack is a tag, so you can pin a version with `git checkout v4.1.2`.
+Pull the repository and re-run the install prompt or the copy step. Every release is a tag, so you can pin one: `git checkout v4.1.2` for the local pack, or `git checkout v4.1.2-global.1+setup-checks.2` for the global variant with the extra. If you've installed the `/setup-checks` extra, your hooks no longer match `global/`, so don't copy a new release over them: ask Claude to compare your install with the new tag and apply the differences, showing you each one.
 
 ## Repository layout
 
@@ -230,6 +234,8 @@ Pull the repository and re-run the install prompt or the copy step. Each release
 .
 ├── README.md                     ← you are here
 ├── local/                        ← per-project variant (v4.1.2): copy into a repository's root
+│   ├── README.md                 the pack's design notes, review history and known limitations
+│   ├── CHANGELOG.md              4.1.0 to 4.1.2
 │   ├── CLAUDE.md                 judgment rules + final-report format
 │   ├── .claude/
 │   │   ├── settings.json         hooks + permission deny/ask rules
@@ -241,13 +247,13 @@ Pull the repository and re-run the install prompt or the copy step. Each release
 │   │   └── tests/                the pack's own test suite (48 tests)
 │   ├── docs/feature-map.md       feature + scenario IDs for runtime verification
 │   ├── examples/                 ESLint, dependency-cruiser and ruff bans; reference driver
-│   └── smoke-test/               disposable-repo builder + live release checklist
-└── global/                       ← user-wide variant (4.1.2-global.1): mirrors ~/.claude/
-    ├── README.md                 what's different, install, verify, uninstall
-    ├── CLAUDE.md                 → ~/.claude/CLAUDE.md
-    ├── guardrails.env            → ~/.claude/guardrails.env (global defaults)
-    ├── skills/                   → ~/.claude/skills/
-    └── guardrails/               → ~/.claude/guardrails/ (hooks, tools, templates, tests, settings.fragment.json)
+│   └── smoke-test/               disposable-repo builder, live release checklist, operator script
+├── global/                       ← user-wide variant (4.1.2-global.1): mirrors ~/.claude/
+│   ├── README.md                 what's different, install, verify, uninstall
+│   ├── CLAUDE.md                 → ~/.claude/CLAUDE.md
+│   ├── guardrails.env            → ~/.claude/guardrails.env (global defaults)
+│   ├── skills/                   → ~/.claude/skills/
+│   └── guardrails/               → ~/.claude/guardrails/ (hooks, tools, templates, tests, settings.fragment.json)
 └── extras/
     └── setup-checks/             ← optional add-on for the global variant (+setup-checks.2)
         ├── README.md             what it does, install (prompt or patch), try it, remove it
@@ -257,6 +263,10 @@ Pull the repository and re-run the install prompt or the copy step. Each release
 ```
 
 Both variants sit in subfolders on purpose. Neither `.claude/` takes effect until you install it, so browsing or contributing here won't switch any hooks on.
+
+## Licence
+
+MIT. See [LICENSE](LICENSE).
 
 ## Credits
 
