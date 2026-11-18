@@ -157,7 +157,22 @@ After a global install, Claude offers to set up each repository's check commands
 
 ### Optional extra: `/setup-checks` (global variant only)
 
-The base pack enforces checks, but only once a project has them. If you're not sure how to set up linting and tests yourself, add the **[`/setup-checks` extra](extras/setup-checks/)** on top of the global install. Your agent then:
+**What it is.** The base pack *enforces* quality checks, but it never *creates* them. Every project needs its own set:
+- a **linter**, which flags likely bugs and bad patterns;
+- a **formatter**, which keeps the code's layout consistent;
+- a **type-checker**, which catches "wrong kind of data" mistakes before the code runs;
+- **tests**, which prove the code does what it should and keeps doing it.
+
+Until a project has these and they're wired into the guardrails, the per-edit check and the full-check gate have nothing to run. The project gets warnings, not protection. The `/setup-checks` extra is an assistant that fills that gap for you.
+
+**Who it's for.** The base pack deliberately keeps this decision with the human, and the extra is optional for the same reason. Developers differ in how much of this they want handed to an agent:
+
+- **Experienced and senior developers** usually have firm opinions about their toolchain: which linter, which rules, how strict, where tests live, what CI runs. For them, an agent that installs tools and edits lint config is noise at best and an overreach at worst. **The base pack alone is the right fit.** You choose the tools, configure `guardrails.env` yourself, and the guardrails enforce your choices. Agents only offer to wire up tools you already have, and propose new checks for you to build with `/add-guardrail`.
+- **Hobbyists, novices, and anyone outside their home turf** (a designer shipping a side project, a backend developer in an unfamiliar frontend stack, someone learning to code with an agent) often don't know which tools a project needs, or that it needs any. They're the people who benefit most from guardrails, and the ones least likely to have the checks the guardrails depend on. For them the assistance isn't just convenient; arguably **they should have it**. Without it, an agent can write and change code with nothing objective checking the result, and the person may not be able to tell. The extra recommends the mainstream defaults, explains each one in plain words, and still makes no changes until you say yes.
+
+If you're unsure which group you're in, install the extra. It only recommends, everything it changes needs your approval, and it never replaces a tool a project already uses.
+
+Add the **[`/setup-checks` extra](extras/setup-checks/)** on top of the global install, and your agent will:
 
 - **notices** when a project has no linter, formatter, type-checker or tests, and recommends fixing that in a line or two;
 - **explains** in plain words what's missing, shows a health card and lists every file it would touch;
